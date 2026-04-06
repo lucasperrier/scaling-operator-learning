@@ -40,3 +40,4 @@ def available_tasks() -> list[str]:
 from . import burgers  # noqa: E402, F401
 from . import darcy  # noqa: E402, F401
 from . import diffusion  # noqa: E402, F401
+from . import diffusion_filtered  # noqa: E402, F401

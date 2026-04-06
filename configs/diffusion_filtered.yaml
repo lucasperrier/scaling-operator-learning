@@ -1,0 +1,32 @@
+# Tier 3.4: Frequency-filtered diffusion experiment
+# Uses the diffusion_filtered task which low-pass filters inputs to match
+# output-relevant spectral content. Tests the causal mechanism behind
+# "resolution hurts": is it extraneous high-frequency content?
+#
+# Run at high resolutions and compare against standard diffusion at same R.
+task:
+  name: diffusion_filtered
+  T: 1.0
+  domain: [0.0, 6.283185307179586]  # [0, 2*pi]
+
+data:
+  n_train_sizes: [500, 1000, 2000, 5000]
+  n_test: 1000
+  data_seeds: [11, 22, 33]
+
+resolution:
+  train_resolutions: [32, 64, 128, 256, 512]
+  eval_resolutions: [32, 64, 128, 256, 512]
+
+model:
+  activation: gelu
+
+train:
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  max_epochs: 5000
+  early_stopping_patience: 200
+  batch_size: 64
+  train_seeds: [101, 202, 303]
+
+out_dir: runs

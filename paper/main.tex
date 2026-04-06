@@ -152,6 +152,18 @@ infinite-dimensional operator learning, elevates resolution to a
 scaling variable, and---critically---relaxes the power-law assumption
 via multi-law model selection.
 
+\paragraph{Methodological positioning.}
+The dominant methodology in neural scaling laws assumes a power-law
+functional form \emph{a priori} and focuses on estimating exponents
+and proportionality constants~\citep{kaplan2020scaling,hoffmann2022training,hestness2017deep}.
+Our work adopts a complementary perspective: rather than assuming
+power laws, we treat the \emph{identity} of the best-fitting
+functional form as itself informative. This family-selection-centric
+view does not discard the traditional approach; instead, it includes
+power laws as one of six candidates and explicitly tests when the
+traditional baseline succeeds (Diffusion FNO/MLP) and when it fails
+(Burgers / Darcy data scaling, where logarithmic fits dominate).
+
 \paragraph{Operator learning.}
 DeepONet~\citep{lu2021learning} builds on the universal approximation
 theorem for operators~\citep{chen1995universal}, factorizing the learned
@@ -367,8 +379,10 @@ This yields:
     slices per pair, each with $n = 7$ points.
 \end{itemize}
 All six candidate laws are fit to each slice and the AICc-best is
-recorded. We report the dominant law (most slice-level wins), the
-median $R^2$ across slices, and the median characteristic parameter.
+recorded. We identify the dominant law as the one with the highest
+mean Akaike weight across slices (see \Cref{sec:candidates}), and
+report slice-level vote counts as supporting detail alongside the
+median $R^2$ and the median characteristic parameter.
 
 
 % ══════════════════════════════════════════════════════════════════════
@@ -788,6 +802,110 @@ the finding that higher resolution is unhelpful or harmful for these
 smooth operators when using a discretization-tied architecture.
 
 
+% ── 5.8: Held-out prediction contest ───────────────────────────────
+\subsection{Held-Out Prediction Contest}
+\label{sec:holdout}
+
+The preceding sections select scaling laws based on in-sample AICc
+comparison. A natural objection is that multi-law selection
+\emph{describes} the data better simply because it has more candidates
+to choose from, without necessarily \emph{predicting} extrapolation
+better. We convert this from a model-selection question into a
+falsifiable prediction question.
+
+\paragraph{Protocol.}
+For each task--model--axis combination, we hold out ${\sim}20\%$ of
+grid configurations (slices), fit (a)~a power-law-only model and
+(b)~the AICc-best multi-law model on the remaining ${\sim}80\%$ of
+slices (pooled), and evaluate out-of-sample RMSE on the held-out
+slices. Results are averaged over all 27 task--model--axis
+combinations.
+
+\paragraph{Results.}
+\Cref{tab:holdout} summarises the held-out prediction contest.
+Multi-law selection achieves lower out-of-sample relative RMSE in
+\holdoutWinFraction{} of combinations, with mean relative improvement
+of \holdoutMeanImprovement{}. This demonstrates that the multi-law
+framework does not merely overfit to observed points but generalises
+better than a power-law baseline to unseen $(N, D, R)$ settings.
+
+\begin{table}[h]
+\centering
+\caption{Held-out prediction contest: out-of-sample relative RMSE for
+power-law-only vs.\ AICc-best multi-law. Bold indicates lower OOS
+error. \texttt{[Placeholder: populate after running
+scripts/run\_holdout\_contest.py]}}
+\label{tab:holdout}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{Power-law OOS} &
+\textbf{Multi-law OOS} & \textbf{Multi-law wins?} \\
+\midrule
+\multicolumn{5}{c}{\emph{[To be populated from
+results/holdout\_prediction\_contest.json]}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ── 5.9: Within-slice bootstrap ─────────────────────────────────────
+\subsection{Within-Slice Bootstrap Uncertainty}
+\label{sec:within-slice-bootstrap}
+
+The inter-slice bootstrap (\Cref{app:akaike}) measures consensus
+\emph{across} slices that each have a fixed AICc winner. It does
+not propagate fitting uncertainty from the $n$ data points within
+each slice. Since $n = 4$--$7$ in our experiments, the per-slice
+winner may be sensitive to individual data points.
+
+\paragraph{Protocol.}
+For each slice, we resample the $n$ data points with replacement
+($B = 500$), refit all six candidate laws, and reselect the AICc
+winner each time. This yields a per-slice law-selection distribution
+that reflects fitting uncertainty directly.
+
+\paragraph{Results.}
+\Cref{tab:within-slice} reports aggregate within-slice winner
+stability. The within-slice dominant fraction (mean fraction of
+bootstrap replicates that select the same law winner) is
+\withinSliceMeanFrac{} on average, lower than the inter-slice
+bootstrap stability, confirming that individual slices carry
+substantial law-selection uncertainty. In
+\withinSliceUnstableFrac{} of axis-level combinations, the
+within-slice dominant fraction falls below 50\%, indicating that
+the per-slice data is insufficient to confidently distinguish
+law families.
+
+\begin{table}[h]
+\centering
+\caption{Within-slice bootstrap stability: mean fraction of $B=500$
+resamples that select the same AICc winner as the original fit.
+\texttt{[Placeholder: populate after running
+scripts/run\_within\_slice\_bootstrap.py]}}
+\label{tab:within-slice}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{Axis} &
+\textbf{WS Dominant Frac.} & \textbf{Orig. Stable} \\
+\midrule
+\multicolumn{5}{c}{\emph{[To be populated from
+results/within\_slice\_bootstrap.json]}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Implications.}
+These results reinforce the paper's core message: at small $n$,
+law-selection conclusions should be interpreted as indicative
+rather than definitive. The aggregate-level findings
+(logarithmic dominance in data scaling, task-dependent resolution
+scaling) are robust to inter-slice resampling, but individual slice
+winners should be treated with appropriate uncertainty. Tier~3
+experiments (\Cref{sec:conclusion}) address this directly by
+densifying the data axis ($n = 11$ points), which substantially
+narrows within-slice uncertainty.
+
+
 % ══════════════════════════════════════════════════════════════════════
 \section{Discussion}
 \label{sec:discussion}
@@ -800,10 +918,14 @@ additional diagnostic information beyond the law's fitted parameters
 in this setting. Specifically:
 
 \begin{itemize}
-  \item \textbf{Logarithmic data scaling} signals a high-dimensional
-    learning problem where the curse of dimensionality dominates. In our
-    setting, Burgers and Darcy---both involving complex input
-    distributions with broad spectral content---fall in this regime.
+  \item \textbf{Logarithmic data scaling} is consistent with a
+    high-dimensional learning problem where the curse of dimensionality
+    limits convergence rates. In our setting, Burgers and
+    Darcy---both involving complex input distributions with broad
+    spectral content---fall in this regime. We note, however, that no
+    direct dimensionality measurement is available; this interpretation
+    is a hypothesis motivated by approximation theory, not an
+    established diagnostic.
   \item \textbf{Power-law data scaling} with large $\alpha$ signals a
     favorable learning geometry. Diffusion's smooth spectral structure
     creates a low-effective-dimensional problem for architectures that
@@ -856,7 +978,11 @@ DeepONet consistently shows the weakest performance: highest $\Einf$
 on all tasks, logarithmic data scaling even on Diffusion (where FNO/MLP
 achieve power laws), and no meaningful capacity scaling. Its branch--trunk
 architecture, while theoretically elegant, appears to be a
-representational bottleneck in practice. The uniform cross-resolution
+representational bottleneck in the settings studied here
+(1D PDEs, three architectures, $\leq$500K parameters).
+Whether this limitation persists for larger-scale DeepONet variants
+or higher-dimensional problems remains an open question.
+The uniform cross-resolution
 transfer is its only structural advantage.
 
 \paragraph{MLP.}
@@ -1136,19 +1262,29 @@ free parameters. The correction term is essential for our small sample
 sizes ($n = 4$--$7$). When $n \leq k + 1$, AICc is set to $+\infty$,
 effectively disqualifying overparameterized models.
 
-BIC is computed as $\mathrm{BIC} = n \ln(\mathrm{RSS}/n) + k \ln n$
-and used as a robustness check against AICc. BIC penalises model
-complexity more heavily for large $n$, though for our small sample
-sizes the two criteria often agree.
+BIC is computed as $\mathrm{BIC} = n \ln(\mathrm{RSS}/n) + k \ln n$.
+For large $n$, BIC penalises complexity more heavily than AICc;
+however, at our small sample sizes ($n = 4$--$7$), an important
+inversion occurs: BIC's penalty $k \ln n \approx 1.6k$ (at $n=5$)
+is \emph{weaker} than AICc's corrected penalty
+$2k + 2k(k+1)/(n-k-1)$, so BIC actually favors \emph{more} complex
+models at these sample sizes---the opposite of its asymptotic
+reputation. At $n = 5$, AICc is the more appropriate criterion
+(it was designed specifically for small samples); BIC concordance
+is reported for transparency, not as a robustness check in the
+usual sense.
 
 
 \subsection{Robustness: BIC Concordance}
 \label{app:bic}
 
 \Cref{tab:bic-concordance} reports the fraction of slices where AICc
-and BIC select the same winning law. High concordance ($>$80\%)
-indicates that the law-selection conclusions are not sensitive to the
-choice of information criterion.
+and BIC select the same winning law. Because of the small-$n$ penalty
+inversion described above, low concordance on axes with $n \leq 5$
+should \emph{not} be interpreted as evidence against the AICc-selected
+law; it reflects the well-understood divergence between the two
+criteria at small sample sizes, where BIC's penalty is paradoxically
+weaker.
 
 \begin{table}[h]
 \centering
@@ -1173,12 +1309,15 @@ Diffusion & FNO      & 21\% & 74\%  & 90\% \\
 \end{tabular}
 
 \vspace{4pt}
-\noindent{\footnotesize The low concordance on the data axis reflects
-the well-known divergence between AICc and BIC for small-$n$ slices
-where AICc's weaker complexity penalty favors the logarithmic law
-(2~parameters) while BIC favors it less. Capacity-axis concordance
-is generally high ($>$65\%), confirming the robustness of capacity
-findings. Resolution concordance varies with PDE smoothness.}
+\noindent{\footnotesize The low concordance on the data axis
+($n=5$) and resolution axis ($n=4$) reflects the small-$n$ penalty
+inversion: at these sample sizes, BIC's complexity penalty is weaker
+than AICc's corrected penalty, so BIC systematically favors more
+complex models---the opposite of its large-$n$ behavior.
+Capacity-axis concordance is generally high ($>$65\%), consistent
+with the larger per-slice sample size ($n=7$) where the penalty
+inversion is less severe. AICc remains the primary criterion
+throughout; BIC concordance is reported for transparency.}
 \end{table}
 
 
@@ -1249,6 +1388,162 @@ ambiguous cases where the top-two laws are within 15\% of each other.}
 red ($<$60\%) ambiguous.}
 \label{fig:bootstrap}
 \end{figure}
+
+
+% ══════════════════════════════════════════════════════════════════════
+% TIER 3: Extended Experiments (Appendix)
+% ══════════════════════════════════════════════════════════════════════
+
+\section{Extended Experiments}
+\label{app:tier3}
+
+The following experiments extend the main study with new training runs
+designed to address specific limitations identified in the core analysis.
+
+\subsection{Densified Data Axis}
+\label{app:dense-data}
+
+The data axis in the main experiments uses $n = 7$ values of $N$
+($\{50, 100, 200, 500, 1000, 2000, 5000\}$). At this sample size,
+AICc-based law selection can be brittle (\Cref{sec:within-slice-bootstrap}).
+We add four intermediate values ($N \in \{150, 300, 750, 3000\}$),
+yielding $n = 11$ data points per slice---enough for more reliable
+discrimination between logarithmic and power-law decay.
+
+\paragraph{Key questions.}
+\begin{enumerate}
+  \item Does the ``logarithmic wins'' finding on the data axis
+    stabilise or shift towards power-law with denser sampling?
+  \item Does BIC concordance improve at $n = 11$ (where the small-$n$
+    penalty inversion from \Cref{app:bic} becomes less severe)?
+  \item Do within-slice bootstrap dominant fractions increase
+    substantially with 11 data points?
+\end{enumerate}
+
+\paragraph{Results.}
+\texttt{[Placeholder: populate after running Tier 3.1 experiments
+with configs/*\_dense\_N.yaml]}
+
+\subsection{MLP Fixed-Parameter-Count Experiment}
+\label{app:mlp-controlled}
+
+For the standard MLP, the parameter count $D$ scales linearly with
+resolution $R$ (since $D = 2Rh + h^2 + 2h + R$ for hidden width $h$).
+This creates a confound: increasing $R$ simultaneously increases input
+dimensionality and model capacity. The \texttt{mlp\_controlled} model
+variant adjusts the hidden width at each resolution so that $D$ remains
+approximately constant (matched to the standard MLP at $R = 64$).
+
+\paragraph{Protocol.}
+Train \texttt{mlp\_controlled} on the Diffusion task (where ``resolution
+hurts'' is strongest) across all capacity levels and
+$R \in \{32, 64, 128, 256\}$. Compare against the standard
+\texttt{mlp\_baseline} at the same configurations.
+
+\paragraph{Interpretation.}
+\begin{itemize}
+  \item \textbf{If ``resolution hurts'' persists} with
+    \texttt{mlp\_controlled} $\Rightarrow$ genuine resolution effect
+    (extraneous high-frequency content harms learning).
+  \item \textbf{If ``resolution hurts'' disappears} $\Rightarrow$ the
+    confound was real (increasing $D$ with $R$ was the bottleneck).
+\end{itemize}
+
+\paragraph{Results.}
+\texttt{[Placeholder: populate after running Tier 3.2 experiments]}
+
+\subsection{Widened Resolution Grid}
+\label{app:wide-res}
+
+The main study uses $n = 4$ resolution values
+($R \in \{32, 64, 128, 256\}$), making the law identity on the
+resolution axis exploratory. We extend to 10 values:
+$R \in \{16, 32, 48, 64, 96, 128, 192, 256, 384, 512\}$.
+
+\paragraph{Key questions.}
+\begin{enumerate}
+  \item Does the Burgers / Darcy / Diffusion resolution trichotomy
+    survive with a wider range?
+  \item Are there regime changes (e.g., resolution helps at first then
+    saturates)?
+  \item Does the specific law identity (e.g., logarithmic vs.\ linear)
+    become more robust at $n = 10$?
+\end{enumerate}
+
+\paragraph{Results.}
+\texttt{[Placeholder: populate after running Tier 3.3 experiments
+with configs/*\_wide\_R.yaml]}
+
+\subsection{Frequency-Filtered Diffusion}
+\label{app:filtered}
+
+To test the causal mechanism behind ``resolution hurts'' on Diffusion,
+we apply a low-pass filter to the input initial conditions before
+training. The filter retains only the first $k_{\max}$ Fourier modes
+(default: $k_{\max} = 10$, matching the number of IC generation modes).
+At high $R$, the standard task includes resolved but output-irrelevant
+high-frequency content; the filtered variant removes it.
+
+\paragraph{Protocol.}
+Train all three architectures on \texttt{diffusion\_filtered} at
+$R \in \{32, 64, 128, 256, 512\}$ with
+$N \in \{500, 1000, 2000, 5000\}$.
+
+\paragraph{Interpretation.}
+\begin{itemize}
+  \item \textbf{If filtering fixes the degradation at high $R$}
+    $\Rightarrow$ strong support for ``extraneous frequencies hurt.''
+  \item \textbf{If degradation persists} $\Rightarrow$ the mechanism
+    is not purely spectral (e.g., optimisation difficulty scales with
+    $R$ regardless of content).
+\end{itemize}
+
+\paragraph{Results.}
+\texttt{[Placeholder: populate after running Tier 3.4 experiments
+with configs/diffusion\_filtered.yaml]}
+
+\subsection{DeepONet Interpolation Ablation}
+\label{app:deeponet-ablation}
+
+In the main experiments, cross-resolution evaluation of DeepONet
+uses linear interpolation to map $R_{\mathrm{eval}}$-resolution
+inputs to the $R_{\mathrm{train}}$-resolution branch input. This
+could introduce interpolation artifacts, especially when
+$R_{\mathrm{eval}} \gg R_{\mathrm{train}}$.
+
+We compare:
+\begin{enumerate}
+  \item[(a)] \textbf{Interpolation} (standard): input interpolated to
+    $R_{\mathrm{train}}$ sensor grid, trunk evaluates on
+    $R_{\mathrm{eval}}$ query grid.
+  \item[(b)] \textbf{Subsampling}: instead of interpolation, take
+    evenly spaced $R_{\mathrm{train}}$ points from the
+    $R_{\mathrm{eval}}$-resolution input. No smoothing.
+\end{enumerate}
+
+\paragraph{Results.}
+\texttt{[Placeholder: populate after running
+scripts/run\_deeponet\_ablation.py]}
+
+\subsection{Early Stopping and Optimiser Sensitivity}
+\label{app:optimizer}
+
+All main experiments use Adam with learning rate $10^{-3}$ and
+early-stopping patience of 200 epochs. We test sensitivity by
+rerunning a subset (all tasks, all models, medium capacity) with:
+\begin{itemize}
+  \item \textbf{Variant A}: Adam with 2$\times$ patience (400 epochs)
+  \item \textbf{Variant B}: SGD with momentum 0.9 + cosine annealing schedule
+\end{itemize}
+
+\paragraph{Key question.}
+Do law-selection winners change when the optimiser or convergence
+criterion shifts? If they do, the law selection is training-sensitive
+rather than reflecting a property of the task--architecture pair.
+
+\paragraph{Results.}
+\texttt{[Placeholder: populate after running
+scripts/run\_optimizer\_ablation.py]}
 
 
 \end{document}

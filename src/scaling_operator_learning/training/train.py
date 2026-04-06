@@ -56,8 +56,14 @@ def train_one_run(
     activation: str = "gelu",
     device: str | None = None,
     val_frac: float = 0.1,
+    optimizer_type: str = "adam",
+    scheduler_type: str | None = None,
 ) -> dict[str, Any]:
     """Train a single operator-learning run and save results.
+
+    Args:
+        optimizer_type: 'adam' (default) or 'sgd'
+        scheduler_type: None (default), 'cosine', or 'step'
 
     Returns metrics dict (also saved to run_dir/metrics.json).
     """
@@ -90,7 +96,7 @@ def train_one_run(
 
     # Build model
     build_fn = get_model(model_tag)
-    if model_tag == "fno":
+    if model_tag in ("fno", "mlp_controlled"):
         model = build_fn(resolution=resolution, capacity_name=capacity_name)
     else:
         hidden = CAPACITY_GRID[capacity_name]
@@ -98,7 +104,21 @@ def train_one_run(
     model = model.to(device)
 
     n_params = parameter_count(model)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    # Build optimizer
+    if optimizer_type == "sgd":
+        optimizer = torch.optim.SGD(
+            model.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9
+        )
+    else:  # adam (default)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    # Build scheduler
+    scheduler = None
+    if scheduler_type == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
+    elif scheduler_type == "step":
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=max_epochs // 3, gamma=0.1)
 
     best_val_loss = float("inf")
     best_epoch = 0
@@ -126,6 +146,8 @@ def train_one_run(
 
         loss.backward()
         optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
 
         # Validation check
         if epoch % 50 == 0 or epoch == max_epochs - 1:
@@ -181,6 +203,8 @@ def train_one_run(
         "eligible_for_fit": True,
         "run_dir": str(run_dir),
         "device": device,
+        "optimizer": optimizer_type,
+        "scheduler": scheduler_type or "none",
     }
 
     save_json(run_dir / "metrics.json", metrics)

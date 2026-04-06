@@ -198,7 +198,7 @@ def main():
 
             # Build model to load weights
             build_fn = get_model(model)
-            if model == "fno":
+            if model in ("fno", "mlp_controlled"):
                 mdl = build_fn(resolution=R_train, capacity_name=cap)
             else:
                 hidden = CAPACITY_GRID[cap]
@@ -216,8 +216,8 @@ def main():
                 if not args.overwrite and (eval_dir / "metrics.json").exists():
                     continue
 
-                # MLP baseline can't evaluate at different resolution
-                if model == "mlp_baseline" and R_eval != R_train:
+                # MLP variants can't evaluate at different resolution
+                if model in ("mlp_baseline", "mlp_controlled") and R_eval != R_train:
                     continue
 
                 edata = eval_cache[R_eval]

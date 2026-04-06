@@ -1,47 +1,81 @@
 #!/usr/bin/env bash
-# Monitor all pods - run from local machine
+# Monitor all RunPod workers from local machine.
 # Usage: bash scripts/monitor_pods.sh
 set -uo pipefail
 
-SSH_KEY=~/.ssh/id_ed25519
-POD1="root@157.157.221.29 -p 20661"
-POD2="root@157.157.221.29 -p 29630"
-POD3="root@213.192.2.122 -p 40003"
-SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=10"
+SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
+
+# Use direct TCP endpoints from RunPod exposed ports (fallbacks from latest snapshot).
+POD1_ADDR="${POD1_ADDR:-root@213.173.108.102}"
+POD1_PORT="${POD1_PORT:-26317}"
+POD1_LABEL="${POD1_LABEL:-classic_peach_piranha}"
+
+POD2_ADDR="${POD2_ADDR:-root@213.173.108.102}"
+POD2_PORT="${POD2_PORT:-30412}"
+POD2_LABEL="${POD2_LABEL:-mid_emerald_goldfish}"
+
+POD3_ADDR="${POD3_ADDR:-root@157.157.221.29}"
+POD3_PORT="${POD3_PORT:-21099}"
+POD3_LABEL="${POD3_LABEL:-musical_red_coral}"
+
+SSH_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=8"
+
+TARGET_TOTAL="${TARGET_TOTAL:-5040}"
+
+check_pod() {
+    local label="$1"
+    local addr="$2"
+    local port="$3"
+
+    echo ""
+    echo "--- ${label} (${addr}:${port}) ---"
+    # shellcheck disable=SC2086
+    ssh ${SSH_OPTS} -p "${port}" "${addr}" -i "${SSH_KEY}" '
+        set +e
+
+        # GPU status
+        if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total --format=csv,noheader | sed "s/^/GPU: /"
+        else
+            echo "GPU: nvidia-smi unavailable"
+        fi
+
+        # Progress snapshots
+        ROOT="/root/scaling-operator-learning"
+        if [ -d "$ROOT/runs" ]; then
+            DONE=$(find "$ROOT/runs" -name metrics.json 2>/dev/null | wc -l)
+            echo "Completed metrics: $DONE"
+        else
+            echo "Completed metrics: 0 (runs directory missing)"
+        fi
+
+        # Common active jobs
+        PROCS=$(ps aux | grep -E "run_sweep.py|run_multilaw_analysis.py|run_analysis.py" | grep -v grep | wc -l)
+        echo "Active analysis/train processes: $PROCS"
+
+        # Latest logs
+        if [ -d "$ROOT" ]; then
+            LATEST=$(ls -1t "$ROOT"/*.log 2>/dev/null | head -n 3)
+            if [ -n "$LATEST" ]; then
+                while IFS= read -r f; do
+                    [ -f "$f" ] || continue
+                    echo "  log: $(basename "$f")"
+                    tail -n 1 "$f" 2>/dev/null | sed "s/^/    /"
+                done <<< "$LATEST"
+            else
+                echo "  log: none"
+            fi
+        fi
+    ' 2>/dev/null || echo "  CONNECTION FAILED"
+}
 
 echo "========================================"
 echo "  EXPERIMENT MONITOR — $(date '+%H:%M:%S')"
 echo "========================================"
 
-for POD_LABEL POD_ADDR LOG_PREFIX TASK in \
-    "Pod1:Burgers(A4000)" "$POD1" "sweep_burgers" "burgers_operator" \
-    "Pod2:Diffusion(L4)"  "$POD2" "sweep_diffusion" "diffusion" \
-    "Pod3:Darcy(3090)"    "$POD3" "sweep_darcy" "darcy"; do
-
-    echo ""
-    echo "--- $POD_LABEL ---"
-    # shellcheck disable=SC2086
-    ssh $SSH_OPTS $POD_ADDR -i "$SSH_KEY" "
-        # GPU utilization
-        nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader 2>/dev/null | sed 's/^/GPU: /'
-
-        # Completed runs
-        N=\$(find /root/scaling-operator-learning/runs -name metrics.json 2>/dev/null | wc -l)
-        echo \"Completed: \$N / 1680\"
-
-        # Active processes
-        PROCS=\$(ps aux | grep run_sweep | grep -v grep | wc -l)
-        echo \"Active processes: \$PROCS\"
-
-        # Latest log lines per resolution
-        for f in /root/${LOG_PREFIX}*.log; do
-            [ -f \"\$f\" ] || continue
-            R=\$(basename \$f .log | sed 's/.*_R/R=/' | sed 's/${LOG_PREFIX}/main/')
-            LAST=\$(tail -1 \"\$f\" 2>/dev/null)
-            echo \"  \$R: \$LAST\"
-        done
-    " 2>/dev/null || echo "  CONNECTION FAILED"
-done
+check_pod "$POD1_LABEL" "$POD1_ADDR" "$POD1_PORT"
+check_pod "$POD2_LABEL" "$POD2_ADDR" "$POD2_PORT"
+check_pod "$POD3_LABEL" "$POD3_ADDR" "$POD3_PORT"
 
 echo ""
 echo "========================================"

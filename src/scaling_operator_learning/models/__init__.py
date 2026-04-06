@@ -85,4 +85,4 @@ def available_models() -> list[str]:
 
 
 # Import model modules so they self-register
-from . import mlp_baseline, deeponet, fno  # noqa: E402, F401
+from . import mlp_baseline, deeponet, fno, mlp_controlled  # noqa: E402, F401
