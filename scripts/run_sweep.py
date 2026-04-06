@@ -226,7 +226,17 @@ def main():
                 grid_eval = edata["grid"].to(device)
 
                 with torch.no_grad():
-                    y_pred = _forward(mdl, x_eval, grid_eval, model)
+                    if model == "deeponet" and R_eval != R_train:
+                        # Branch net expects input at training resolution;
+                        # interpolate eval inputs from R_eval → R_train grid
+                        x_branch = torch.nn.functional.interpolate(
+                            x_eval.unsqueeze(1), size=R_train,
+                            mode="linear", align_corners=False,
+                        ).squeeze(1)
+                        x_query = grid_eval.unsqueeze(-1)
+                        y_pred = mdl(x_branch, x_query)
+                    else:
+                        y_pred = _forward(mdl, x_eval, grid_eval, model)
                     test_rel_l2 = (torch.norm(y_pred - y_eval) / torch.norm(y_eval)).item()
                     test_mse = ((y_pred - y_eval) ** 2).mean().item()
 
