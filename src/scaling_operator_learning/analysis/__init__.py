@@ -295,9 +295,3 @@ def run_scaling_analysis(
         "full_2d_fits": full_2d_fits,
         "full_3d_fits": full_3d_fits,
     }
-
-    return {
-        "capacity_fits": capacity_fits,
-        "data_fits": data_fits,
-        "full_fits": full_fits,
-    }

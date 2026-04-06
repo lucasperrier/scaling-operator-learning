@@ -38,3 +38,5 @@ def available_tasks() -> list[str]:
 
 # Import task modules so they self-register
 from . import burgers  # noqa: E402, F401
+from . import darcy  # noqa: E402, F401
+from . import diffusion  # noqa: E402, F401

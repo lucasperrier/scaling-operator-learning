@@ -6,13 +6,19 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import json
 import time
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
+import torch
+
 from scaling_operator_learning.config_loader import load_experiment_config
-from scaling_operator_learning.models import CAPACITY_GRID, available_models
+from scaling_operator_learning.models import CAPACITY_GRID, available_models, get_model, parameter_count
+from scaling_operator_learning.models.fno import FNO_CAPACITY_GRID
 from scaling_operator_learning.tasks import get_task
+from scaling_operator_learning.training.train import _forward
+from scaling_operator_learning.utils import save_json
 
 
 def _run_single(job: dict) -> dict:
@@ -50,6 +56,7 @@ def main():
         [int(x) for x in args.resolutions.split(",")]
         if args.resolutions else cfg.resolution.train_resolutions
     )
+    eval_resolutions = cfg.resolution.eval_resolutions
     data_seeds = (
         [int(x) for x in args.data_seeds.split(",")]
         if args.data_seeds else cfg.data.data_seeds
@@ -158,6 +165,90 @@ def main():
 
     elapsed = time.time() - t0
     print(f"\nDone: {n_success}/{n_total} successful, {n_skipped} skipped ({elapsed:.0f}s)")
+
+    # === Cross-resolution evaluation ===
+    # Extra eval resolutions that aren't in the training set
+    extra_eval_res = [r for r in eval_resolutions if r not in resolutions]
+    if not extra_eval_res:
+        print("\nNo extra eval resolutions to evaluate.")
+        return
+
+    print(f"\n=== Cross-resolution evaluation at R_eval={extra_eval_res} ===")
+    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    n_eval = 0
+
+    for ds_seed in data_seeds:
+        # Pre-generate eval data at extra resolutions
+        eval_cache: dict[int, dict] = {}
+        for R_eval in extra_eval_res:
+            eval_cache[R_eval] = gen_dataset(
+                n_samples=cfg.data.n_test, resolution=R_eval, seed=ds_seed + 10000
+            )
+
+        for model, cap, N, R_train, ts in itertools.product(
+            models, capacities, dataset_sizes, resolutions, train_seeds
+        ):
+            train_run_dir = (
+                out_root / f"task={task_name}" / f"model={model}" / f"capacity={cap}"
+                / f"N={N}" / f"R={R_train}" / f"data_seed={ds_seed}" / f"seed={ts}"
+            )
+            best_pt = train_run_dir / "best.pt"
+            if not best_pt.exists():
+                continue
+
+            # Build model to load weights
+            build_fn = get_model(model)
+            if model == "fno":
+                mdl = build_fn(resolution=R_train, capacity_name=cap)
+            else:
+                hidden = CAPACITY_GRID[cap]
+                mdl = build_fn(resolution=R_train, hidden_widths=hidden, activation=cfg.model.activation)
+            mdl.load_state_dict(torch.load(best_pt, weights_only=True, map_location=device))
+            mdl = mdl.to(device)
+            mdl.eval()
+
+            for R_eval in extra_eval_res:
+                eval_dir = (
+                    out_root / f"task={task_name}" / f"model={model}" / f"capacity={cap}"
+                    / f"N={N}" / f"R={R_train}" / f"data_seed={ds_seed}" / f"seed={ts}"
+                    / f"eval_resolution={R_eval}"
+                )
+                if not args.overwrite and (eval_dir / "metrics.json").exists():
+                    continue
+
+                # MLP baseline can't evaluate at different resolution
+                if model == "mlp_baseline" and R_eval != R_train:
+                    continue
+
+                edata = eval_cache[R_eval]
+                x_eval = edata["inputs"].to(device)
+                y_eval = edata["outputs"].to(device)
+                grid_eval = edata["grid"].to(device)
+
+                with torch.no_grad():
+                    y_pred = _forward(mdl, x_eval, grid_eval, model)
+                    test_rel_l2 = (torch.norm(y_pred - y_eval) / torch.norm(y_eval)).item()
+                    test_mse = ((y_pred - y_eval) ** 2).mean().item()
+
+                eval_metrics = {
+                    "model_name": model,
+                    "capacity_name": cap,
+                    "parameter_count": parameter_count(mdl),
+                    "resolution": R_train,
+                    "eval_resolution": R_eval,
+                    "dataset_size": N,
+                    "train_seed": ts,
+                    "status": "success",
+                    "test_rel_l2": test_rel_l2,
+                    "test_mse": test_mse,
+                    "eligible_for_fit": True,
+                    "run_dir": str(eval_dir),
+                    "device": device,
+                }
+                save_json(eval_dir / "metrics.json", eval_metrics)
+                n_eval += 1
+
+    print(f"Cross-resolution eval: {n_eval} evaluations saved.")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from scaling_operator_learning.analysis import fit_power_law
+from scaling_operator_learning.analysis.cross_resolution import build_transfer_matrix
 
 # ── Style ────────────────────────────────────────────────────────────────
 plt.rcParams.update({
@@ -143,6 +144,154 @@ def fig2_resolution_scaling(df: pd.DataFrame, out_dir: Path):
     print("  Fig 2: Resolution scaling saved")
 
 
+# ── Figure 3: Capacity scaling at fixed N and R ─────────────────────────
+def fig3_capacity_scaling(df: pd.DataFrame, out_dir: Path):
+    models = [m for m in ["mlp_baseline", "deeponet", "fno"] if m in df["model_name"].unique()]
+    N_vals = sorted(df["dataset_size"].unique())
+    N_target = N_vals[len(N_vals) // 2]  # pick a middle dataset size
+    has_res = "resolution" in df.columns
+    R_target = sorted(df["resolution"].unique())[1] if has_res else None
+
+    sub = df[df["dataset_size"] == N_target]
+    if R_target is not None:
+        sub = sub[sub["resolution"] == R_target]
+
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+    for model in models:
+        msub = sub[sub["model_name"] == model].sort_values("parameter_count")
+        if msub.empty:
+            continue
+        D = msub["parameter_count"].values
+        E = msub["test_rel_l2_mean"].values
+        E_err = msub.get("test_rel_l2_stderr", pd.Series(np.zeros(len(msub)))).values
+        _plot_scaling_curve(ax, D, E, E_err, model, MODEL_COLORS.get(model, "gray"),
+                            MODEL_MARKERS.get(model, "o"))
+
+    title = f"N={N_target}"
+    if R_target is not None:
+        title += f", R={R_target}"
+    ax.set_title(title)
+    _setup_loglog(ax, xlabel="D (parameters)", ylabel="Relative L2 error")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    fig.savefig(out_dir / "fig3_capacity_scaling.pdf")
+    fig.savefig(out_dir / "fig3_capacity_scaling.png")
+    plt.close(fig)
+    print("  Fig 3: Capacity scaling saved")
+
+
+# ── Figure 4: Exponent comparison bar chart ──────────────────────────────
+def fig4_exponent_comparison(fits: dict | None, out_dir: Path):
+    if fits is None:
+        print("  Fig 4: No fits JSON provided, skipping")
+        return
+
+    models_order = ["mlp_baseline", "deeponet", "fno"]
+    exponent_keys = [
+        ("data_fits", "alpha", r"$\alpha$ (data)"),
+        ("capacity_fits", "alpha", r"$\beta$ (capacity)"),
+        ("resolution_fits", "alpha", r"$\gamma$ (resolution)"),
+    ]
+
+    # Aggregate: take mean exponent across slices for each model
+    bar_data: dict[str, dict[str, tuple[float, float, float]]] = {}  # model -> label -> (mean, lo, hi)
+    for fit_key, param, label in exponent_keys:
+        recs = fits.get(fit_key, [])
+        if not recs:
+            continue
+        for model in models_order:
+            model_recs = [r for r in recs if r.get("model_name") == model and param in r]
+            if not model_recs:
+                continue
+            vals = [r[param] for r in model_recs]
+            boots = [r.get("bootstrap", {}) for r in model_recs]
+            mean_val = float(np.mean(vals))
+            ci_los = [b.get(f"{param}_ci_lo", mean_val) for b in boots]
+            ci_his = [b.get(f"{param}_ci_hi", mean_val) for b in boots]
+            mean_lo = float(np.mean(ci_los))
+            mean_hi = float(np.mean(ci_his))
+            bar_data.setdefault(model, {})[label] = (mean_val, mean_lo, mean_hi)
+
+    if not bar_data:
+        print("  Fig 4: No exponent data found, skipping")
+        return
+
+    labels = [l for _, _, l in exponent_keys if any(l in bar_data.get(m, {}) for m in models_order)]
+    x = np.arange(len(labels))
+    width = 0.25
+
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+    for i, model in enumerate(models_order):
+        if model not in bar_data:
+            continue
+        vals, errs_lo, errs_hi = [], [], []
+        for label in labels:
+            entry = bar_data[model].get(label)
+            if entry:
+                vals.append(entry[0])
+                errs_lo.append(entry[0] - entry[1])
+                errs_hi.append(entry[2] - entry[0])
+            else:
+                vals.append(0)
+                errs_lo.append(0)
+                errs_hi.append(0)
+        ax.bar(x + i * width, vals, width, label=model,
+               color=MODEL_COLORS.get(model, "gray"),
+               yerr=[errs_lo, errs_hi], capsize=3)
+
+    ax.set_xticks(x + width)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("Exponent value")
+    ax.set_title("Scaling Exponents by Model")
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis="y")
+    fig.tight_layout()
+    fig.savefig(out_dir / "fig4_exponent_comparison.pdf")
+    fig.savefig(out_dir / "fig4_exponent_comparison.png")
+    plt.close(fig)
+    print("  Fig 4: Exponent comparison saved")
+
+
+# ── Figure 5: Cross-resolution transfer heatmap ─────────────────────────
+def fig5_transfer_heatmap(df: pd.DataFrame, out_dir: Path):
+    if "eval_resolution" not in df.columns:
+        print("  Fig 5: No eval_resolution column, skipping")
+        return
+
+    models = [m for m in ["mlp_baseline", "deeponet", "fno"] if m in df["model_name"].unique()]
+    if not models:
+        print("  Fig 5: No models found, skipping")
+        return
+
+    fig, axes = plt.subplots(1, len(models), figsize=(4.5 * len(models), 3.5))
+    if len(models) == 1:
+        axes = [axes]
+
+    for ax, model in zip(axes, models):
+        try:
+            matrix = build_transfer_matrix(df, model_name=model)
+        except (ValueError, KeyError):
+            ax.set_title(f"{model} (no data)")
+            continue
+
+        im = ax.imshow(matrix.values, cmap="viridis_r", aspect="auto")
+        ax.set_xticks(range(len(matrix.columns)))
+        ax.set_xticklabels(matrix.columns, rotation=45)
+        ax.set_yticks(range(len(matrix.index)))
+        ax.set_yticklabels(matrix.index)
+        ax.set_xlabel("R_eval")
+        ax.set_ylabel("R_train")
+        ax.set_title(model)
+        fig.colorbar(im, ax=ax, shrink=0.8, label="Rel. L2 error")
+
+    fig.suptitle("Cross-Resolution Transfer", y=1.02)
+    fig.tight_layout()
+    fig.savefig(out_dir / "fig5_transfer_heatmap.pdf")
+    fig.savefig(out_dir / "fig5_transfer_heatmap.png")
+    plt.close(fig)
+    print("  Fig 5: Cross-resolution heatmap saved")
+
+
 # ── Main ─────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="Generate figures")
@@ -160,6 +309,9 @@ def main():
     print("Generating figures...")
     fig1_data_scaling(df, out_dir)
     fig2_resolution_scaling(df, out_dir)
+    fig3_capacity_scaling(df, out_dir)
+    fig4_exponent_comparison(fits, out_dir)
+    fig5_transfer_heatmap(df, out_dir)
     print("Done!")
 
 
