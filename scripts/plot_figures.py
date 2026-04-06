@@ -229,8 +229,8 @@ def fig4_exponent_comparison(fits: dict | None, out_dir: Path):
             entry = bar_data[model].get(label)
             if entry:
                 vals.append(entry[0])
-                errs_lo.append(entry[0] - entry[1])
-                errs_hi.append(entry[2] - entry[0])
+                errs_lo.append(max(0, entry[0] - entry[1]))
+                errs_hi.append(max(0, entry[2] - entry[0]))
             else:
                 vals.append(0)
                 errs_lo.append(0)
