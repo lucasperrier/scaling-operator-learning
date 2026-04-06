@@ -16,38 +16,56 @@ from . import register_task
 
 
 def _random_ic(grid: np.ndarray, rng: np.random.Generator, n_modes: int = 10) -> np.ndarray:
-    """Sample a random initial condition as a truncated Fourier series."""
+    """Sample a random initial condition as a truncated Fourier series.
+
+    Coefficients decay as 1/k^2 to ensure smooth ICs that don't blow up
+    during time evolution with low viscosity.
+    """
     u = np.zeros_like(grid)
     for k in range(1, n_modes + 1):
-        a_k = rng.normal(0, 1.0 / k)
-        b_k = rng.normal(0, 1.0 / k)
+        a_k = rng.normal(0, 1.0 / k ** 2)
+        b_k = rng.normal(0, 1.0 / k ** 2)
         u += a_k * np.sin(k * grid) + b_k * np.cos(k * grid)
     return u
 
 
-def _spectral_solve(u0: np.ndarray, nu: float, T: float, dt: float = 1e-3) -> np.ndarray:
-    """Solve Burgers' equation with pseudo-spectral method + RK4.
+def _spectral_solve(u0: np.ndarray, nu: float, T: float, dt: float = 2e-4) -> np.ndarray:
+    """Solve Burgers' equation with pseudo-spectral integrating-factor RK4.
 
+    Uses an exponential integrating factor for the stiff linear (diffusion) term
+    so the explicit RK4 only advances the nonlinear advection.
+    Applies 2/3-rule dealiasing to prevent spectral blow-up.
     Assumes periodic domain [0, 2*pi] with R grid points.
     """
     R = len(u0)
     k = np.fft.fftfreq(R, d=1.0 / R)  # wavenumbers
+    L = -nu * k ** 2  # linear operator in Fourier space
 
-    def rhs(u_hat):
-        u = np.fft.ifft(u_hat).real
-        ux = np.fft.ifft(1j * k * u_hat).real
-        return -np.fft.fft(u * ux) + nu * (-(k ** 2)) * u_hat
+    # 2/3 dealiasing mask
+    dealias = np.ones(R)
+    kmax = R // 3
+    dealias[np.abs(k) > kmax] = 0.0
+
+    n_steps = max(int(np.ceil(T / dt)), 1)
+    h = T / n_steps
+
+    E_half = np.exp(L * h * 0.5)
+    E_full = np.exp(L * h)
+
+    def NL(u_hat):
+        """Nonlinear term: -FFT(u * u_x) with dealiasing."""
+        u_hat_d = dealias * u_hat
+        u = np.fft.ifft(u_hat_d).real
+        ux = np.fft.ifft(1j * k * u_hat_d).real
+        return -dealias * np.fft.fft(u * ux)
 
     u_hat = np.fft.fft(u0)
-    n_steps = int(np.ceil(T / dt))
-    dt_actual = T / n_steps
-
     for _ in range(n_steps):
-        k1 = rhs(u_hat)
-        k2 = rhs(u_hat + 0.5 * dt_actual * k1)
-        k3 = rhs(u_hat + 0.5 * dt_actual * k2)
-        k4 = rhs(u_hat + dt_actual * k3)
-        u_hat = u_hat + (dt_actual / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+        k1 = h * NL(u_hat)
+        k2 = h * NL(E_half * u_hat + 0.5 * k1)
+        k3 = h * NL(E_half * u_hat + 0.5 * k2)
+        k4 = h * NL(E_full * u_hat + E_half * k3)
+        u_hat = E_full * u_hat + (E_full * k1 + 2 * E_half * (k2 + k3) + k4) / 6.0
 
     return np.fft.ifft(u_hat).real
 
