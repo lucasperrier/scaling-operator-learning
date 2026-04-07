@@ -38,27 +38,27 @@ python scripts/run_sweep.py \
     --config configs/darcy_wide_R.yaml \
     --models mlp_baseline,deeponet,fno \
     --resolutions 16,48,96,192,384,512 \
-    --device cuda -j 1
+    --device cuda -j 1 --no-checkpoint
 
 log "Diffusion wide R (resolutions: 16,48,96,192,384,512)..."
 python scripts/run_sweep.py \
     --config configs/diffusion_wide_R.yaml \
     --models mlp_baseline,deeponet,fno \
     --resolutions 16,48,96,192,384,512 \
-    --device cuda -j 1
+    --device cuda -j 1 --no-checkpoint
 
 log "Darcy dense N (new sizes: 150,300,750,3000)..."
 python scripts/run_sweep.py \
     --config configs/darcy_dense_N.yaml \
     --models mlp_baseline,deeponet,fno \
     --dataset-sizes 150,300,750,3000 \
-    --device cuda -j 1
+    --device cuda -j 1 --no-checkpoint
 
 log "Diffusion dense N (new sizes: 150,300,750,3000)..."
 python scripts/run_sweep.py \
     --config configs/diffusion_dense_N.yaml \
     --models mlp_baseline,deeponet,fno \
     --dataset-sizes 150,300,750,3000 \
-    --device cuda -j 1
+    --device cuda -j 1 --no-checkpoint
 
 log "All chain work complete!"
