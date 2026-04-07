@@ -40,6 +40,7 @@ def main():
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--pilot", action="store_true", help="Small pilot grid")
     parser.add_argument("--device", default=None, help="Force device: cpu or cuda")
+    parser.add_argument("--no-checkpoint", action="store_true", help="Skip saving model checkpoints (saves disk)")
     parser.add_argument("-j", "--jobs", type=int, default=1)
     args = parser.parse_args()
 
@@ -136,6 +137,7 @@ def main():
                 "patience": cfg.train.early_stopping_patience,
                 "batch_size": cfg.train.batch_size,
                 "activation": cfg.model.activation,
+                "save_checkpoint": not args.no_checkpoint,
             }
             if args.device:
                 job["device"] = args.device

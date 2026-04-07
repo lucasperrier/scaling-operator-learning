@@ -1,0 +1,111 @@
+nohup: ignoring input
+Loaded 1260 training groups
+  burgers_operator     deeponet         data        : ws_dominant=exponential    ws_frac=0.35  orig_stable=61%
+  burgers_operator     deeponet         capacity    : ws_dominant=linear         ws_frac=0.43  orig_stable=95%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  burgers_operator     deeponet         resolution  : ws_dominant=logarithmic    ws_frac=0.76  orig_stable=100%
+  burgers_operator     fno              data        : ws_dominant=power          ws_frac=0.47  orig_stable=64%
+  burgers_operator     fno              capacity    : ws_dominant=logarithmic    ws_frac=0.29  orig_stable=85%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  burgers_operator     fno              resolution  : ws_dominant=logarithmic    ws_frac=0.52  orig_stable=83%
+  burgers_operator     mlp_baseline     data        : ws_dominant=power          ws_frac=0.43  orig_stable=32%
+  burgers_operator     mlp_baseline     capacity    : ws_dominant=logarithmic    ws_frac=0.37  orig_stable=95%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  burgers_operator     mlp_baseline     resolution  : ws_dominant=logarithmic    ws_frac=0.66  orig_stable=100%
+  darcy                deeponet         data        : ws_dominant=logarithmic    ws_frac=0.33  orig_stable=54%
+  darcy                deeponet         capacity    : ws_dominant=linear         ws_frac=0.53  orig_stable=90%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  darcy                deeponet         resolution  : ws_dominant=logarithmic    ws_frac=0.41  orig_stable=100%
+  darcy                fno              data        : ws_dominant=logarithmic    ws_frac=0.41  orig_stable=64%
+  darcy                fno              capacity    : ws_dominant=logarithmic    ws_frac=0.52  orig_stable=80%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  darcy                fno              resolution  : ws_dominant=logarithmic    ws_frac=0.45  orig_stable=94%
+  darcy                mlp_baseline     data        : ws_dominant=power          ws_frac=0.35  orig_stable=25%
+  darcy                mlp_baseline     capacity    : ws_dominant=linear         ws_frac=0.45  orig_stable=90%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  darcy                mlp_baseline     resolution  : ws_dominant=logarithmic    ws_frac=0.44  orig_stable=94%
+  diffusion            deeponet         data        : ws_dominant=logarithmic    ws_frac=0.43  orig_stable=89%
+  diffusion            deeponet         capacity    : ws_dominant=linear         ws_frac=0.45  orig_stable=100%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  diffusion            deeponet         resolution  : ws_dominant=logarithmic    ws_frac=0.51  orig_stable=94%
+  diffusion            fno              data        : ws_dominant=power          ws_frac=0.45  orig_stable=61%
+  diffusion            fno              capacity    : ws_dominant=linear         ws_frac=0.42  orig_stable=100%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  diffusion            fno              resolution  : ws_dominant=logarithmic    ws_frac=0.45  orig_stable=89%
+  diffusion            mlp_baseline     data        : ws_dominant=power          ws_frac=0.59  orig_stable=82%
+  diffusion            mlp_baseline     capacity    : ws_dominant=linear         ws_frac=0.45  orig_stable=65%
+/home/lucas-perrier/Documents/projects/scaling-operator-learning/scripts/run_multilaw_analysis.py:114: OptimizeWarning: Covariance of the parameters could not be estimated
+  popt, _ = curve_fit(func, X, E, p0=p0, bounds=bounds, maxfev=maxfev)
+  diffusion            mlp_baseline     resolution  : ws_dominant=logarithmic    ws_frac=0.59  orig_stable=94%
+
+====================================================================================================
+WITHIN-SLICE BOOTSTRAP SUMMARY
+====================================================================================================
+Task                   Model            Axis         WS Dominant      WS Frac    Orig Stable 
+----------------------------------------------------------------------------------------------------
+burgers_operator       deeponet         data         exponential      0.35       61%         
+burgers_operator       deeponet         capacity     linear           0.43       95%         
+burgers_operator       deeponet         resolution   logarithmic      0.76       100%        
+burgers_operator       fno              data         power            0.47       64%         
+burgers_operator       fno              capacity     logarithmic      0.29       85%         
+burgers_operator       fno              resolution   logarithmic      0.52       83%         
+burgers_operator       mlp_baseline     data         power            0.43       32%         
+burgers_operator       mlp_baseline     capacity     logarithmic      0.37       95%         
+burgers_operator       mlp_baseline     resolution   logarithmic      0.66       100%        
+darcy                  deeponet         data         logarithmic      0.33       54%         
+darcy                  deeponet         capacity     linear           0.53       90%         
+darcy                  deeponet         resolution   logarithmic      0.41       100%        
+darcy                  fno              data         logarithmic      0.41       64%         
+darcy                  fno              capacity     logarithmic      0.52       80%         
+darcy                  fno              resolution   logarithmic      0.45       94%         
+darcy                  mlp_baseline     data         power            0.35       25%         
+darcy                  mlp_baseline     capacity     linear           0.45       90%         
+darcy                  mlp_baseline     resolution   logarithmic      0.44       94%         
+diffusion              deeponet         data         logarithmic      0.43       89%         
+diffusion              deeponet         capacity     linear           0.45       100%        
+diffusion              deeponet         resolution   logarithmic      0.51       94%         
+diffusion              fno              data         power            0.45       61%         
+diffusion              fno              capacity     linear           0.42       100%        
+diffusion              fno              resolution   logarithmic      0.45       89%         
+diffusion              mlp_baseline     data         power            0.59       82%         
+diffusion              mlp_baseline     capacity     linear           0.45       65%         
+diffusion              mlp_baseline     resolution   logarithmic      0.59       94%         
+
+====================================================================================================
+KEY INSIGHT: Within-slice vs inter-slice bootstrap comparison
+====================================================================================================
+Within-slice bootstrap propagates fitting uncertainty from the n data
+points per slice. If within-slice dominant fractions are much lower than
+inter-slice bootstrap probabilities, the per-slice data is insufficient
+to confidently distinguish law families.
+
+  ⚠  burgers_operator     deeponet         data        : ws_frac=0.35 — law selection is highly uncertain at the slice level
+  ⚠  burgers_operator     deeponet         capacity    : ws_frac=0.43 — law selection is highly uncertain at the slice level
+  ⚠  burgers_operator     fno              data        : ws_frac=0.47 — law selection is highly uncertain at the slice level
+  ⚠  burgers_operator     fno              capacity    : ws_frac=0.29 — law selection is highly uncertain at the slice level
+  ⚠  burgers_operator     mlp_baseline     data        : ws_frac=0.43 — law selection is highly uncertain at the slice level
+  ⚠  burgers_operator     mlp_baseline     capacity    : ws_frac=0.37 — law selection is highly uncertain at the slice level
+  ⚠  darcy                deeponet         data        : ws_frac=0.33 — law selection is highly uncertain at the slice level
+  ⚠  darcy                deeponet         resolution  : ws_frac=0.41 — law selection is highly uncertain at the slice level
+  ⚠  darcy                fno              data        : ws_frac=0.41 — law selection is highly uncertain at the slice level
+  ⚠  darcy                fno              resolution  : ws_frac=0.45 — law selection is highly uncertain at the slice level
+  ⚠  darcy                mlp_baseline     data        : ws_frac=0.35 — law selection is highly uncertain at the slice level
+  ⚠  darcy                mlp_baseline     capacity    : ws_frac=0.45 — law selection is highly uncertain at the slice level
+  ⚠  darcy                mlp_baseline     resolution  : ws_frac=0.44 — law selection is highly uncertain at the slice level
+  ⚠  diffusion            deeponet         data        : ws_frac=0.43 — law selection is highly uncertain at the slice level
+  ⚠  diffusion            deeponet         capacity    : ws_frac=0.45 — law selection is highly uncertain at the slice level
+  ⚠  diffusion            fno              data        : ws_frac=0.45 — law selection is highly uncertain at the slice level
+  ⚠  diffusion            fno              capacity    : ws_frac=0.42 — law selection is highly uncertain at the slice level
+  ⚠  diffusion            fno              resolution  : ws_frac=0.45 — law selection is highly uncertain at the slice level
+  ⚠  diffusion            mlp_baseline     capacity    : ws_frac=0.45 — law selection is highly uncertain at the slice level
+
+Saved → results/within_slice_bootstrap.json
+Total time: 23669.0s

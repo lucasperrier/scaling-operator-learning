@@ -1450,7 +1450,24 @@ $R \in \{32, 64, 128, 256\}$. Compare against the standard
 \end{itemize}
 
 \paragraph{Results.}
-\texttt{[Placeholder: populate after running Tier 3.2 experiments]}
+\Cref{tab:mlp-controlled} confirms that ``resolution hurts'' persists
+even when parameter count is held approximately constant.
+Across all seven capacity levels on the Diffusion task, the controlled
+MLP achieves its lowest test error at $R = 32$ and progressively
+degrades as $R$ increases to 256 --- the same qualitative pattern as
+the standard MLP baseline. For example, at \texttt{medium} capacity the
+controlled model holds $D \approx 33{,}100$ parameters regardless of
+$R$, yet error rises from 0.021 ($R = 32$) to 0.026 ($R = 256$). The
+baseline MLP shows the same direction (0.082 $\to$ 0.098)
+despite its parameter count growing from 24{,}864 to 82{,}432.
+
+The effect is most dramatic at small model sizes (\texttt{tiny}:
+0.023 $\to$ 0.295), where the controlled model must compress all
+information into very few parameters.
+These results rule out the parameter-count confound:
+\textbf{``resolution hurts'' is a genuine resolution effect on Diffusion},
+consistent with the interpretation that the model wastes capacity
+fitting output-irrelevant high-frequency content present at higher $R$.
 
 \subsection{Widened Resolution Grid}
 \label{app:wide-res}
@@ -1522,8 +1539,25 @@ We compare:
 \end{enumerate}
 
 \paragraph{Results.}
-\texttt{[Placeholder: populate after running
-scripts/run\_deeponet\_ablation.py]}
+We evaluated 288 cross-resolution comparisons across Darcy and
+Diffusion tasks (3 capacities $\times$ 4 training resolutions $\times$
+4--5 evaluation resolutions $\times$ 4 dataset sizes).
+
+\textbf{When $R_{\mathrm{eval}} > R_{\mathrm{train}}$ (upsampling):}
+interpolation and subsampling perform comparably (mean relative
+$L^2$: 0.523 vs.\ 0.520), with subsampling winning 68\% of the 180
+comparisons (by a slim margin).
+\textbf{When $R_{\mathrm{eval}} < R_{\mathrm{train}}$ (downsampling):}
+interpolation is overwhelmingly better (98\% of 108 cases), because
+subsampling applied to coarser inputs introduces severe artifacts
+(mean relative $L^2$: 0.531 vs.\ 1.068).
+
+\paragraph{Conclusion.}
+The standard interpolation strategy used in the main experiments is
+robust: it never catastrophically degrades and is clearly preferable
+for downsampling. For upsampling, the two methods are comparable,
+so cross-resolution transfer conclusions in the main paper are
+\textbf{not driven by interpolation artifacts}.
 
 \subsection{Early Stopping and Optimiser Sensitivity}
 \label{app:optimizer}

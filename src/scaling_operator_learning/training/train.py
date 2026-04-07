@@ -58,6 +58,7 @@ def train_one_run(
     val_frac: float = 0.1,
     optimizer_type: str = "adam",
     scheduler_type: str | None = None,
+    save_checkpoint: bool = True,
 ) -> dict[str, Any]:
     """Train a single operator-learning run and save results.
 
@@ -123,6 +124,7 @@ def train_one_run(
     best_val_loss = float("inf")
     best_epoch = 0
     epochs_no_improve = 0
+    best_state = None
     start_time = time.time()
 
     for epoch in range(max_epochs):
@@ -163,7 +165,10 @@ def train_one_run(
                 best_val_loss = val_rel_l2
                 best_epoch = epoch
                 epochs_no_improve = 0
-                torch.save(model.state_dict(), run_dir / "best.pt")
+                if save_checkpoint:
+                    torch.save(model.state_dict(), run_dir / "best.pt")
+                else:
+                    best_state = model.state_dict()
             else:
                 epochs_no_improve += 50
 
@@ -175,6 +180,8 @@ def train_one_run(
     # Load best model for final eval
     if (run_dir / "best.pt").exists():
         model.load_state_dict(torch.load(run_dir / "best.pt", weights_only=True))
+    elif not save_checkpoint and best_state is not None:
+        model.load_state_dict(best_state)
 
     model.eval()
     with torch.no_grad():
