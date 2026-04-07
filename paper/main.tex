@@ -24,6 +24,12 @@
 \newcommand{\relLtwo}{\varepsilon_{\mathrm{rel}}}
 \DeclareMathOperator*{\argmin}{arg\,min}
 
+% ── Auto-populated result macros ──────────────────────────────────
+\newcommand{\holdoutWinFraction}{11/27 (41\%)}
+\newcommand{\holdoutMeanImprovement}{1.3\%}
+\newcommand{\withinSliceMeanFrac}{0.46}
+\newcommand{\withinSliceUnstableFrac}{19/27 (70\%)}
+
 % ══════════════════════════════════════════════════════════════════════
 \title{%
   Beyond Power Laws: What Scaling Reveals About Operator Learning%
@@ -449,6 +455,16 @@ logarithmic coefficients $b$ vary from 0.02 (Burgers DeepONet,
 indicating very slow data benefit) to 0.52 (Darcy MLP, indicating
 moderate gains).
 
+\noindent\textbf{Caveat (within-slice stability).}
+The inter-slice bootstrap (Boot.\% column) shows stable \emph{aggregate}
+selection, but the within-slice bootstrap (\Cref{sec:within-slice-bootstrap})
+reveals that individual slices carry substantial uncertainty: mean
+within-slice dominant fractions on the data axis range from 0.33 to
+0.59, and in several cases the bootstrap's per-slice winner differs
+from the AICc aggregate winner. All data-axis claims except
+Diffusion MLP ($w_1 = 0.68$, bootstrap fraction $= 0.59$) should
+therefore be interpreted as indicative rather than robust.
+
 \paragraph{Exception: Diffusion FNO and MLP show genuine power laws.}
 For Diffusion, FNO and MLP exhibit clean power-law data scaling with
 $\alpha \approx 1.1$--$1.2$ and $R^2 = 0.998$. This is the only
@@ -825,24 +841,57 @@ combinations.
 \Cref{tab:holdout} summarises the held-out prediction contest.
 Multi-law selection achieves lower out-of-sample relative RMSE in
 \holdoutWinFraction{} of combinations, with mean relative improvement
-of \holdoutMeanImprovement{}. This demonstrates that the multi-law
-framework does not merely overfit to observed points but generalises
-better than a power-law baseline to unseen $(N, D, R)$ settings.
+of \holdoutMeanImprovement{}. In most cases the two approaches
+perform comparably, with differences in the fourth decimal place.
+The clearest multi-law advantage appears on the Darcy task, where
+the data-axis fit for MLP improves substantially (0.343 $\to$ 0.234).
+These results show that multi-law selection does not overfit to
+in-sample points (comparable or better extrapolation), while
+providing richer descriptive information. However, the extrapolation
+advantage alone does not justify the framework---its primary value
+lies in the diagnostic power of law \emph{identity}.
 
 \begin{table}[h]
 \centering
 \caption{Held-out prediction contest: out-of-sample relative RMSE for
 power-law-only vs.\ AICc-best multi-law. Bold indicates lower OOS
-error. \texttt{[Placeholder: populate after running
-scripts/run\_holdout\_contest.py]}}
+error.}
 \label{tab:holdout}
+\small
 \begin{tabular}{@{}llccc@{}}
 \toprule
-\textbf{Task} & \textbf{Model} & \textbf{Power-law OOS} &
-\textbf{Multi-law OOS} & \textbf{Multi-law wins?} \\
+\textbf{Task} & \textbf{Model} & \textbf{Axis} &
+\textbf{PL OOS} & \textbf{ML OOS} \\
 \midrule
-\multicolumn{5}{c}{\emph{[To be populated from
-results/holdout\_prediction\_contest.json]}} \\
+Burgers & DeepONet   & data       & \textbf{0.076} & 0.076 \\
+        &            & capacity   & \textbf{0.098} & 0.098 \\
+        &            & resolution & 0.051 & \textbf{0.051} \\
+        & FNO        & data       & \textbf{0.074} & 0.074 \\
+        &            & capacity   & 0.202 & \textbf{0.202} \\
+        &            & resolution & 0.113 & \textbf{0.112} \\
+        & MLP        & data       & 0.076 & 0.076 \\
+        &            & capacity   & 0.152 & \textbf{0.152} \\
+        &            & resolution & \textbf{0.093} & 0.094 \\
+\midrule
+Darcy   & DeepONet   & data       & 0.257 & \textbf{0.246} \\
+        &            & capacity   & 0.719 & \textbf{0.710} \\
+        &            & resolution & \textbf{0.748} & 0.749 \\
+        & FNO        & data       & 0.040 & \textbf{0.038} \\
+        &            & capacity   & 0.135 & \textbf{0.135} \\
+        &            & resolution & \textbf{0.107} & 0.107 \\
+        & MLP        & data       & 0.343 & \textbf{0.234} \\
+        &            & capacity   & \textbf{1.120} & 1.125 \\
+        &            & resolution & 1.035 & \textbf{1.034} \\
+\midrule
+Diffusion & DeepONet & data       & 0.051 & 0.051 \\
+          &          & capacity   & \textbf{0.060} & 0.062 \\
+          &          & resolution & 0.060 & \textbf{0.060} \\
+          & FNO      & data       & 0.003 & 0.003 \\
+          &          & capacity   & 0.009 & 0.009 \\
+          &          & resolution & 0.005 & 0.005 \\
+          & MLP      & data       & 0.027 & 0.027 \\
+          &          & capacity   & \textbf{0.129} & 0.133 \\
+          &          & resolution & 0.089 & 0.089 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -878,18 +927,27 @@ law families.
 
 \begin{table}[h]
 \centering
-\caption{Within-slice bootstrap stability: mean fraction of $B=500$
-resamples that select the same AICc winner as the original fit.
-\texttt{[Placeholder: populate after running
-scripts/run\_within\_slice\_bootstrap.py]}}
+\caption{Within-slice bootstrap stability ($B=500$): mean fraction of
+resamples selecting the dominant law. Values below 0.50 indicate the
+per-slice data is insufficient to distinguish law families.}
 \label{tab:within-slice}
+\small
 \begin{tabular}{@{}llccc@{}}
 \toprule
-\textbf{Task} & \textbf{Model} & \textbf{Axis} &
-\textbf{WS Dominant Frac.} & \textbf{Orig. Stable} \\
+\textbf{Task} & \textbf{Model} & \textbf{Data} &
+\textbf{Capacity} & \textbf{Resolution} \\
 \midrule
-\multicolumn{5}{c}{\emph{[To be populated from
-results/within\_slice\_bootstrap.json]}} \\
+Burgers & DeepONet & 0.35 & 0.43 & \textbf{0.76} \\
+        & FNO      & 0.47 & 0.29 & \textbf{0.52} \\
+        & MLP      & 0.43 & 0.37 & \textbf{0.66} \\
+\midrule
+Darcy   & DeepONet & 0.33 & \textbf{0.54} & 0.41 \\
+        & FNO      & 0.41 & \textbf{0.52} & 0.45 \\
+        & MLP      & 0.35 & 0.45 & 0.44 \\
+\midrule
+Diffusion & DeepONet & 0.43 & 0.45 & \textbf{0.51} \\
+          & FNO      & 0.45 & 0.42 & 0.45 \\
+          & MLP      & \textbf{0.59} & 0.45 & \textbf{0.59} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -897,13 +955,15 @@ results/within\_slice\_bootstrap.json]}} \\
 \paragraph{Implications.}
 These results reinforce the paper's core message: at small $n$,
 law-selection conclusions should be interpreted as indicative
-rather than definitive. The aggregate-level findings
-(logarithmic dominance in data scaling, task-dependent resolution
-scaling) are robust to inter-slice resampling, but individual slice
-winners should be treated with appropriate uncertainty. Tier~3
-experiments (\Cref{sec:conclusion}) address this directly by
-densifying the data axis ($n = 11$ points), which substantially
-narrows within-slice uncertainty.
+rather than definitive. Of 27 task--model--axis combinations, only
+7 satisfy both criteria for robust selection (mean Akaike weight
+$>0.5$ \emph{and} within-slice dominant fraction $>0.5$ for the
+same law); 15 are ambiguous (one criterion met); and 5 are weak
+(neither met). The resolution axis yields the most robust selections
+(4 of 7 robust cases), consistent with its role as a stable
+diagnostic. Data-axis and capacity-axis claims should be treated
+with appropriate caution until the denser $n=11$ grid
+(\Cref{app:dense-n}) provides stronger discriminative power.
 
 
 % ══════════════════════════════════════════════════════════════════════
