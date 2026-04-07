@@ -1,0 +1,22 @@
+{
+  "best_epoch": 3750,
+  "capacity_name": "medium",
+  "dataset_size": 100,
+  "device": "cuda",
+  "diverged": false,
+  "eligible_for_fit": true,
+  "failure_reason": "",
+  "model_name": "mlp_baseline",
+  "nan_detected": false,
+  "optimizer": "sgd",
+  "parameter_count": 24864,
+  "resolution": 32,
+  "run_dir": "runs_ablation_sgd_cosine/task=burgers_operator/model=mlp_baseline/capacity=medium/N=100/R=32/data_seed=11/seed=303",
+  "runtime_seconds": 9.213346004486084,
+  "scheduler": "cosine",
+  "status": "success",
+  "test_mse": 0.33544257283210754,
+  "test_rel_l2": 0.6067021489143372,
+  "train_seed": 303,
+  "val_rel_l2": 0.6274323463439941
+}

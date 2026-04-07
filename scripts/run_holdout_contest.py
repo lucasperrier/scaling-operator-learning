@@ -187,8 +187,8 @@ def _run_holdout_axis(df, task, model, axis, x_col, group_cols, holdout_frac=0.2
     p_rmse = result.get("power_law_oos_rel_rmse")
     m_rmse = result.get("multilaw_oos_rel_rmse")
     if p_rmse is not None and m_rmse is not None:
-        result["multilaw_wins"] = m_rmse < p_rmse
-        result["relative_improvement"] = (p_rmse - m_rmse) / max(p_rmse, 1e-12)
+        result["multilaw_wins"] = bool(m_rmse < p_rmse)
+        result["relative_improvement"] = float((p_rmse - m_rmse) / max(p_rmse, 1e-12))
     else:
         result["multilaw_wins"] = None
 
@@ -229,8 +229,8 @@ def main():
 
     # Summary
     n_total = len(results)
-    n_wins = sum(1 for r in results if r.get("multilaw_wins") is True)
-    n_loses = sum(1 for r in results if r.get("multilaw_wins") is False)
+    n_wins = sum(1 for r in results if r.get("multilaw_wins") == True)  # noqa: E712 (numpy bool)
+    n_loses = sum(1 for r in results if r.get("multilaw_wins") == False)  # noqa: E712
     n_na = n_total - n_wins - n_loses
 
     print(f"\n{'='*90}")
@@ -244,8 +244,8 @@ def main():
     # Per-axis breakdown
     for axis in ["data", "capacity", "resolution"]:
         ar = [r for r in results if r["axis"] == axis]
-        aw = sum(1 for r in ar if r.get("multilaw_wins") is True)
-        al = sum(1 for r in ar if r.get("multilaw_wins") is False)
+        aw = sum(1 for r in ar if r.get("multilaw_wins") == True)  # noqa: E712
+        al = sum(1 for r in ar if r.get("multilaw_wins") == False)  # noqa: E712
         print(f"  {axis:12s}: multi={aw}, power={al}, n/a={len(ar)-aw-al}")
 
     # Save

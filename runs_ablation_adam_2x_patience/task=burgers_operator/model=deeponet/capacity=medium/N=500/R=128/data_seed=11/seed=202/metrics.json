@@ -1,0 +1,22 @@
+{
+  "best_epoch": 4250,
+  "capacity_name": "medium",
+  "dataset_size": 500,
+  "device": "cuda",
+  "diverged": false,
+  "eligible_for_fit": true,
+  "failure_reason": "",
+  "model_name": "deeponet",
+  "nan_detected": false,
+  "optimizer": "adam",
+  "parameter_count": 82817,
+  "resolution": 128,
+  "run_dir": "runs_ablation_adam_2x_patience/task=burgers_operator/model=deeponet/capacity=medium/N=500/R=128/data_seed=11/seed=202",
+  "runtime_seconds": 18.926647901535034,
+  "scheduler": "none",
+  "status": "success",
+  "test_mse": 0.07472822815179825,
+  "test_rel_l2": 0.31730136275291443,
+  "train_seed": 202,
+  "val_rel_l2": 0.30362915992736816
+}

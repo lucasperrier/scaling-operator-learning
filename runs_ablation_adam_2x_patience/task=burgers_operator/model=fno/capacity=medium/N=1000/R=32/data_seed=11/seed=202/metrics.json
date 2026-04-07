@@ -1,0 +1,22 @@
+{
+  "best_epoch": 3300,
+  "capacity_name": "medium",
+  "dataset_size": 1000,
+  "device": "cuda",
+  "diverged": false,
+  "eligible_for_fit": true,
+  "failure_reason": "",
+  "model_name": "fno",
+  "nan_detected": false,
+  "optimizer": "adam",
+  "parameter_count": 287425,
+  "resolution": 32,
+  "run_dir": "runs_ablation_adam_2x_patience/task=burgers_operator/model=fno/capacity=medium/N=1000/R=32/data_seed=11/seed=202",
+  "runtime_seconds": 44.84321689605713,
+  "scheduler": "none",
+  "status": "success",
+  "test_mse": 0.006745008751749992,
+  "test_rel_l2": 0.08603153377771378,
+  "train_seed": 202,
+  "val_rel_l2": 0.09479793161153793
+}

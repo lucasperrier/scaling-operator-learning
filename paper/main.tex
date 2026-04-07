@@ -25,8 +25,8 @@
 \DeclareMathOperator*{\argmin}{arg\,min}
 
 % ── Auto-populated result macros ──────────────────────────────────
-\newcommand{\holdoutWinFraction}{11/27 (41\%)}
-\newcommand{\holdoutMeanImprovement}{1.3\%}
+\newcommand{\holdoutWinFraction}{14/33 (42\%)}
+\newcommand{\holdoutMeanImprovement}{1.0\%}
 \newcommand{\withinSliceMeanFrac}{0.46}
 \newcommand{\withinSliceUnstableFrac}{19/27 (70\%)}
 
@@ -863,35 +863,41 @@ error.}
 \textbf{Task} & \textbf{Model} & \textbf{Axis} &
 \textbf{PL OOS} & \textbf{ML OOS} \\
 \midrule
-Burgers & DeepONet   & data       & \textbf{0.076} & 0.076 \\
-        &            & capacity   & \textbf{0.098} & 0.098 \\
-        &            & resolution & 0.051 & \textbf{0.051} \\
-        & FNO        & data       & \textbf{0.074} & 0.074 \\
-        &            & capacity   & 0.202 & \textbf{0.202} \\
-        &            & resolution & 0.113 & \textbf{0.112} \\
-        & MLP        & data       & 0.076 & 0.076 \\
-        &            & capacity   & 0.152 & \textbf{0.152} \\
-        &            & resolution & \textbf{0.093} & 0.094 \\
+Burgers & DeepONet   & data       & 0.192 & \textbf{0.192} \\
+        &            & capacity   & \textbf{0.170} & 0.170 \\
+        &            & resolution & 0.149 & \textbf{0.148} \\
+        & FNO        & data       & 0.305 & \textbf{0.304} \\
+        &            & capacity   & \textbf{0.338} & 0.338 \\
+        &            & resolution & 0.267 & \textbf{0.262} \\
+        & MLP        & data       & 0.147 & \textbf{0.147} \\
+        &            & capacity   & 0.247 & \textbf{0.247} \\
+        &            & resolution & 0.198 & \textbf{0.192} \\
+        & MLP-ctrl   & data       & \textbf{0.382} & 0.384 \\
+        &            & capacity   & \textbf{0.880} & 0.880 \\
+        &            & resolution & 0.213 & \textbf{0.195} \\
 \midrule
-Darcy   & DeepONet   & data       & 0.257 & \textbf{0.246} \\
-        &            & capacity   & 0.719 & \textbf{0.710} \\
-        &            & resolution & \textbf{0.748} & 0.749 \\
-        & FNO        & data       & 0.040 & \textbf{0.038} \\
-        &            & capacity   & 0.135 & \textbf{0.135} \\
-        &            & resolution & \textbf{0.107} & 0.107 \\
-        & MLP        & data       & 0.343 & \textbf{0.234} \\
-        &            & capacity   & \textbf{1.120} & 1.125 \\
-        &            & resolution & 1.035 & \textbf{1.034} \\
+Darcy   & DeepONet   & data       & 0.137 & \textbf{0.134} \\
+        &            & capacity   & \textbf{0.303} & 0.304 \\
+        &            & resolution & \textbf{0.148} & 0.149 \\
+        & FNO        & data       & 0.101 & \textbf{0.097} \\
+        &            & capacity   & 0.264 & 0.264 \\
+        &            & resolution & \textbf{0.327} & 0.327 \\
+        & MLP        & data       & 0.113 & \textbf{0.101} \\
+        &            & capacity   & \textbf{0.236} & 0.236 \\
+        &            & resolution & 0.358 & \textbf{0.357} \\
 \midrule
-Diffusion & DeepONet & data       & 0.051 & 0.051 \\
-          &          & capacity   & \textbf{0.060} & 0.062 \\
-          &          & resolution & 0.060 & \textbf{0.060} \\
-          & FNO      & data       & 0.003 & 0.003 \\
-          &          & capacity   & 0.009 & 0.009 \\
-          &          & resolution & 0.005 & 0.005 \\
-          & MLP      & data       & 0.027 & 0.027 \\
-          &          & capacity   & \textbf{0.129} & 0.133 \\
-          &          & resolution & 0.089 & 0.089 \\
+Diffusion & DeepONet & data       & 0.172 & 0.172 \\
+          &          & capacity   & \textbf{0.211} & 0.216 \\
+          &          & resolution & 0.322 & \textbf{0.322} \\
+          & FNO      & data       & \textbf{0.118} & 0.118 \\
+          &          & capacity   & 0.362 & 0.362 \\
+          &          & resolution & \textbf{0.321} & 0.321 \\
+          & MLP      & data       & \textbf{0.089} & 0.089 \\
+          &          & capacity   & \textbf{0.428} & 0.439 \\
+          &          & resolution & \textbf{0.344} & 0.344 \\
+          & MLP-ctrl & data       & \textbf{0.989} & 0.990 \\
+          &          & capacity   & \textbf{2.859} & 2.872 \\
+          &          & resolution & 0.224 & \textbf{0.205} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1481,8 +1487,32 @@ discrimination between logarithmic and power-law decay.
 \end{enumerate}
 
 \paragraph{Results.}
-\texttt{[Placeholder: populate after running Tier 3.1 experiments
-with configs/*\_dense\_N.yaml]}
+Extending from $n = 5$ to $n = 11$ data-axis sample sizes
+dramatically shifts law selection on the data axis.
+With the original sparse grid ($N \in \{50, 100, 500, 1000, 5000\}$),
+logarithmic was the dominant winner across Burgers
+(DeepONet: 79\%, FNO: 52\%, MLP: 75\%) and Darcy (MLP: 89\%).
+With the dense grid ($N \in \{50, 100, 150, 200, 300, 500, 750,
+1000, 2000, 3000, 5000\}$), logarithmic is displaced: exponential
+now dominates Burgers DeepONet (57\%) and both Darcy models
+(DeepONet: 54\%, MLP: 96\%); power or saturation emerge for
+Burgers FNO (power, 40\%) and Burgers MLP (saturation, 40\%).
+
+All the new winners---exponential, saturation, stretched
+exponential---encode a finite irreducible-error floor that the
+logarithmic form lacks. With only five sample sizes, the
+within-regime curvature is too coarsely sampled for AICc to separate
+a log curve from a bounded-decay curve, biasing selection toward the
+simpler logarithmic form. Intermediate points (especially $N = 150$,
+200, 300, 750) resolve the curvature near the floor and tip
+selection toward bounded families.
+
+\emph{Takeaway:} The ``logarithmic dominance'' reported in
+\Cref{sec:data-scaling} is an artifact of sparse sampling;
+with denser grids, data-axis scaling is better described by families
+with an irreducible-error floor, consistent with finite-resolution
+approximation limits. Results for Darcy FNO and all Diffusion models
+are pending completion of the remaining dense-N runs.
 
 \subsection{MLP Fixed-Parameter-Count Experiment}
 \label{app:mlp-controlled}
