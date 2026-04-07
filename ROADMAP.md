@@ -69,25 +69,25 @@ These require new runs and substantially extend the experimental scope.
 ### 3.1 Densify the data axis
 The data axis (n = 5 points per slice) is the weakest link for law selection. Adding even 2 intermediate values substantially changes the model-selection landscape.
 - [x] Add N ∈ {200, 2000} (or finer: {150, 300, 750, 2000, 3000}) to the dataset-size sweep
-- [ ] Re-run law selection with the denser axis; check whether "logarithmic wins" stabilises or shifts
+- [x] Re-run law selection with the denser axis; check whether "logarithmic wins" stabilises or shifts
 - [ ] Re-run BIC concordance on the denser axis — at n = 7+ the small-n penalty inversion becomes less severe
-- [ ] Report: is the logarithmic vs power-law distinction criterion-robust once the axis is better sampled?
+- [x] Report: is the logarithmic vs power-law distinction criterion-robust once the axis is better sampled?
 
 **Code:** `configs/*_dense_N.yaml` (3 configs, N = [50..5000] with 11 values)
 
 ### 3.2 MLP fixed-parameter-count experiment
 The cleanest mechanistic test in the paper. "Resolution hurts" for MLP on Diffusion could be a confound with D ∝ R.
 - [x] Design MLP variant where hidden width is adjusted to hold D approximately fixed across R ∈ {32, 64, 128, 256}
-- [ ] Run on Diffusion task (where "resolution hurts" is strongest)
-- [ ] If conclusions flip → the confound was real; if they hold → genuine resolution effect
-- [ ] Report in a new subsection or appendix
+- [x] Run on Diffusion task (where "resolution hurts" is strongest)
+- [x] If conclusions flip → the confound was real; if they hold → genuine resolution effect
+- [x] Report in a new subsection or appendix
 
 **Code:** `src/scaling_operator_learning/models/mlp_controlled.py` — registered as `mlp_controlled`, param count holds ~33K across R=32..256
 
 ### 3.3 Widen resolution grid
 With only n = 4 resolution values, the specific law on this axis is exploratory. Extending the range tests whether the directional trichotomy is stable.
 - [x] Add R ∈ {16, 512} (or {16, 48, 96, 192, 384, 512}) to the resolution sweep
-- [ ] Check whether Burgers/Darcy/Diffusion trichotomy survives
+- [x] Check whether Burgers/Darcy/Diffusion trichotomy survives
 - [ ] Look for regime changes: does resolution help at first then saturate? Hurt only above a threshold?
 
 **Code:** `configs/*_wide_R.yaml` (3 configs, R = [16..512] with 10 values)
@@ -102,13 +102,13 @@ Tests the causal mechanism behind "resolution hurts": is it extraneous high-freq
 
 ### 3.5 DeepONet interpolation ablation
 - [x] Test native-resolution branch evaluation (no interpolation back to R_train) on a subset of runs
-- [ ] Report whether cross-resolution transfer conclusions change
+- [x] Report whether cross-resolution transfer conclusions change
 
 **Code:** `scripts/run_deeponet_ablation.py` — compares interpolation vs subsampling strategies
 
 ### 3.6 Early-stopping / optimiser sensitivity
 - [x] Rerun a subset (e.g., Burgers, all models, medium capacity) with 2× patience and a different optimiser (SGD + cosine schedule)
-- [ ] Check if law-selection winners shift
+- [x] Check if law-selection winners shift
 
 **Code:** `scripts/run_optimizer_ablation.py` — runs Adam-2×-patience and SGD-cosine variants; `train_one_run()` now supports `optimizer_type` and `scheduler_type` args
 

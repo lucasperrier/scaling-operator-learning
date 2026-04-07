@@ -1,5 +1,5 @@
 # Tier 3.1: Densified data axis for Darcy
-# Adds N ∈ {150, 300, 750, 3000} to the original grid, yielding 11 points per slice.
+# Extends original 5-point grid to 11 points per slice.
 task:
   name: darcy
   domain: [0.0, 1.0]

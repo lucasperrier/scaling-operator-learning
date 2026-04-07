@@ -1,6 +1,6 @@
 # Tier 3.1: Densified data axis for Burgers
-# Adds N ∈ {150, 300, 750, 3000} to the original grid, yielding 11 points per slice.
-# This substantially improves law-selection reliability (n=11 vs n=7).
+# Extends original 5-point grid {50,100,500,1000,5000} to 11 points per slice.
+# Adds N ∈ {150, 200, 300, 750, 2000, 3000} for more reliable law selection.
 task:
   name: burgers_operator
   T: 1.0

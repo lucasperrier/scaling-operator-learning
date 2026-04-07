@@ -357,8 +357,8 @@ We sweep over five axes:
   \item \textbf{Resolution} $R \in \{32, 64, 128, 256\}$
   \item \textbf{Model capacity}: 7 levels (\textit{tiny} to
     \textit{xlarge}; $\sim$5K--500K parameters)
-  \item \textbf{Data seeds}: $\{11, 22\}$
-  \item \textbf{Training seeds}: $\{101, 202\}$
+  \item \textbf{Data seeds}: $\{11, 22, 33\}$
+  \item \textbf{Training seeds}: $\{101, 202, 303\}$
 \end{itemize}
 This yields $3 \times 7 \times 5 \times 4 \times 2 \times 2 = 1{,}680$
 runs per task and $5{,}040$ total training runs. Each model is trained
@@ -1174,24 +1174,22 @@ our findings challenge several widespread assumptions:
 \paragraph{Limitations and future work.}
 Our study is limited to 1D PDEs and a 1D Darcy formulation. In higher
 dimensions, resolution effects are amplified ($R^d$ cost growth) and
-may shift the resolution-scaling balance. The resolution axis has
-only 4 training values ($R \in \{32, 64, 128, 256\}$), limiting
-statistical power for curve selection; the specific law identity on
-this axis should be treated as exploratory (see the restricted-set
-ablation in \Cref{tab:restricted-comparison}). Future work should
-explore wider resolution ranges.
+may shift the resolution-scaling balance. The baseline resolution grid
+has only 4 training values ($R \in \{32, 64, 128, 256\}$); the
+widened 10-value grid (\Cref{app:wide-res}) substantially improves
+law-selection power and reveals shifts (e.g., FNO resolution scaling
+moves to linear) but is currently available only for Burgers.
+Future work should extend the wide-$R$ grid to all tasks.
 
 \paragraph{MLP resolution--capacity confound.}
 For the MLP baseline, the parameter count scales linearly with input
 resolution ($D \propto R$), creating a confound between the
-resolution and capacity axes: increasing $R$ simultaneously increases
-the number of parameters and the input dimensionality. The finding
-that ``resolution hurts'' for MLP on Diffusion could partly reflect
-the difficulty of optimising a higher-dimensional network rather than
-a resolution effect \emph{per se}. Disentangling these effects
-requires a controlled experiment in which the hidden width is adjusted
-to hold $D$ approximately fixed across resolutions---an important
-direction for future work.
+resolution and capacity axes. The controlled-parameter experiment
+(\Cref{app:mlp-controlled}) rules out this confound for the
+``resolution hurts'' finding on Diffusion: degradation persists even
+at fixed parameter count (\Cref{tab:mlp-controlled}). However,
+the confound remains uncontrolled for Burgers and Darcy, where
+resolution effects are directionally different.
 
 The multi-law framework could be extended to fit the full 3D
 relationship with axis-specific functional forms (e.g., logarithmic
@@ -1490,10 +1488,10 @@ designed to address specific limitations identified in the core analysis.
 \subsection{Densified Data Axis}
 \label{app:dense-n}
 
-The data axis in the main experiments uses $n = 7$ values of $N$
-($\{50, 100, 200, 500, 1000, 2000, 5000\}$). At this sample size,
+The data axis in the main experiments uses $n = 5$ values of $N$
+($\{50, 100, 500, 1000, 5000\}$). At this sample size,
 AICc-based law selection can be brittle (\Cref{sec:within-slice-bootstrap}).
-We add four intermediate values ($N \in \{150, 300, 750, 3000\}$),
+We add six intermediate values ($N \in \{150, 200, 300, 750, 2000, 3000\}$),
 yielding $n = 11$ data points per slice---enough for more reliable
 discrimination between logarithmic and power-law decay.
 
