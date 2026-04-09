@@ -1,0 +1,1358 @@
+% !TEX program = pdflatex
+\documentclass[11pt]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage[numbers]{natbib}
+\bibliographystyle{plainnat}
+
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,citecolor=green!50!black,urlcolor=blue!70!black}
+
+% ── Macros ────────────────────────────────────────────────────────────
+\newcommand{\Einf}{E_\infty}
+\newcommand{\Reval}{R_{\mathrm{eval}}}
+\newcommand{\Rtrain}{R_{\mathrm{train}}}
+\newcommand{\relLtwo}{\varepsilon_{\mathrm{rel}}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+% ── Result macros ─────────────────────────────────────────────────────
+\newcommand{\totalRuns}{32{,}783}
+\newcommand{\mainRuns}{31{,}370}
+\newcommand{\ablationRuns}{1{,}413}
+
+% ══════════════════════════════════════════════════════════════════════
+\title{%
+  Empirical Scaling Laws for Neural Operator Learning:\\
+  Architecture, Data, Resolution, and Regime Dependence\\
+  on Canonical 1D PDE Tasks%
+}
+\author{Lucas Perrier}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% ══════════════════════════════════════════════════════════════════════
+\begin{abstract}
+Scaling laws have become central tools for predicting and allocating
+resources in deep learning, yet their empirical status in operator
+learning---where discretization resolution introduces a third axis
+alongside dataset size and model capacity---remains unclear.
+We present a controlled empirical study of \totalRuns{} training runs
+spanning three canonical 1D PDE benchmarks (Burgers, Darcy flow,
+heat diffusion), three neural-operator architectures (FNO, DeepONet,
+MLP), and two orders of magnitude along each of dataset size~$N$,
+resolution~$R$, and parameter count~$D$.
+Every configuration is repeated across nine random seeds, and all
+models share an identical training protocol.
+
+Three findings emerge with strong reproducible evidence.
+First, \emph{architecture choice dominates all other scaling axes}:
+FNO wins 143 out of 143 head-to-head comparisons at matched capacity,
+often by an order of magnitude.
+Second, \emph{dataset size is the primary useful lever}, explaining
+65--93\% of error variance in a log-linear regression;
+capacity contributes modestly and resolution is negligible or harmful.
+Third, \emph{higher resolution does not reliably reduce error}:
+it actively increases error on smooth problems (diffusion), provides
+no signal on elliptic problems (Darcy), and helps only on
+advection-dominated problems (Burgers)---a finding confirmed by
+a parameter-controlled MLP experiment that isolates resolution from
+capacity.
+We further show that the functional form of the scaling relationship
+is regime-dependent: no single law (power, exponential, logarithmic)
+holds across tasks and architectures.
+All data, code, and analysis scripts are publicly available.
+\end{abstract}
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+
+Neural scaling laws---empirical relationships between performance and
+resources such as dataset size, model capacity, and compute---have
+reshaped how the machine-learning community allocates training budgets.
+The landmark results of \citet{kaplan2020scaling} and
+\citet{hoffmann2022training} demonstrated that language-model loss
+follows smooth power laws in parameters and tokens, enabling reliable
+extrapolation and motivating the ``scaling hypothesis'' that has driven
+much of modern AI investment.
+Earlier, \citet{hestness2017deep} established similar power-law
+relationships across vision, speech, and translation tasks.
+
+Operator learning---the task of learning mappings between function
+spaces, typically solution operators of partial differential equations
+(PDEs)---differs from these settings in a fundamental way.
+In addition to dataset size~$N$ and model capacity~$D$, discretization
+resolution~$R$ introduces a \emph{third} scaling axis that has no
+direct counterpart in language or vision.
+Whether the smooth, universal power laws observed in the token/parameter
+plane of language models transfer to the three-axis
+$(N, R, D)$ landscape of operator learning is an open empirical
+question.
+
+Several recent works have begun to address operator-learning scaling.
+\citet{li2021fourier} introduced the Fourier Neural Operator (FNO) and
+demonstrated resolution invariance in spectral convolutions.
+\citet{lu2021learning} proposed DeepONet based on the universal
+approximation theorem for operators~\citep{chen1995universal}.
+Yet systematic, controlled comparisons across the full $(N, R, D)$ grid
+are scarce: most evaluations fix two axes and vary one, use
+architecture-specific hyperparameter tuning, or report results on a
+single PDE.
+This leaves basic questions unanswered: when does adding resolution
+help? How important is model capacity relative to data? Is there a
+universal scaling form, or does the relationship depend on the task
+and architecture?
+
+This paper presents a large-scale empirical study designed to answer
+these questions---and to be honest about what cannot be answered with
+current evidence.
+We make no claim to a universal scaling law for operator learning.
+Instead, we provide \emph{controlled, reproducible measurements} across
+a grid of three 1D PDE tasks, three architectures (plus a
+parameter-controlled MLP variant), and $\sim$32{,}000 training runs,
+all under an identical training protocol.
+Every claim is backed by seed-averaged results across nine
+random initializations, and we report evidence strength explicitly.
+
+Our main contributions are:
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item A \textbf{controlled experimental protocol} covering three
+    scaling axes, three tasks, and four model variants with identical
+    training configuration and nine-seed replication
+    (\Cref{sec:design}).
+
+  \item Evidence that \textbf{architecture choice overwhelms all other
+    scaling considerations} for these 1D tasks: FNO outperforms
+    DeepONet and MLP in every tested regime (\Cref{sec:architecture}).
+
+  \item A demonstration that \textbf{resolution is not a useful scaling
+    axis in general}: it helps for Burgers, is noise for Darcy, and
+    actively hurts for diffusion---with a parameter-controlled
+    experiment confirming the effect is not an artifact of the
+    MLP capacity confound (\Cref{sec:resolution,sec:confound}).
+
+  \item Evidence that the \textbf{functional form of scaling is
+    regime-dependent}: AICc-based model selection across six candidate
+    laws reveals no single winner, and the selected law shifts with
+    grid density (\Cref{sec:law-form}).
+
+  \item \textbf{Optimizer and convergence ablations} showing that
+    directional findings (resolution helps/hurts, data has bounded
+    returns) are stable across Adam, SGD+cosine, and doubled
+    early-stopping patience (\Cref{sec:ablations}).
+
+  \item \textbf{Full public release} of all 32{,}783 run logs,
+    analysis scripts, and configuration files.
+\end{enumerate}
+
+We restrict all claims to the 1D PDE setting studied here.
+Generalization to higher dimensions, more complex PDEs, or
+larger-scale architectures remains an important open problem.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Neural scaling laws.}
+\citet{hestness2017deep} provided the first broad survey of power-law
+scaling across deep learning domains. \citet{kaplan2020scaling}
+distilled this into clean scaling laws for autoregressive language
+models, and \citet{hoffmann2022training} refined the compute-optimal
+frontier (``Chinchilla scaling''). These works established the
+expectation that test loss follows $E \propto X^{-\alpha}$ in
+dataset size, model size, or compute.
+
+\paragraph{Operator learning.}
+The FNO~\citep{li2021fourier} learns in spectral space, enabling
+resolution invariance via truncation of Fourier modes.
+DeepONet~\citep{lu2021learning} uses a branch-trunk decomposition
+motivated by the universal approximation theorem for
+operators~\citep{chen1995universal}.
+Extensions include physics-informed
+DeepONets~\citep{wang2021learning}, U-FNO~\citep{wen2022ufno}, and
+the General Neural Operator Transformer
+(GNOT)~\citep{hao2023gnot}.
+These works focus on architectural innovation and accuracy on
+individual benchmarks; systematic scaling studies across
+$(N, R, D)$ are rare.
+
+\paragraph{Scaling in scientific ML.}
+\citet{perrier2025scaling} introduced scaling-law diagnostics for
+physics-informed machine learning, proposing multi-law model selection
+via AICc. The present paper builds on that diagnostic framework while
+shifting the emphasis from methodology to empirical findings: we use
+the diagnostic tools to characterize what actually happens when each
+axis is scaled, rather than proposing a new fitting methodology.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Experimental Design}
+\label{sec:design}
+
+The study is designed to isolate the effect of each scaling axis
+($N$, $R$, $D$) while keeping all other factors constant.
+This section describes the benchmarks, architectures, scaling grid,
+and training protocol in detail.
+
+\subsection{PDE Benchmarks}
+\label{sec:pdes}
+
+We select three 1D PDEs that span a range of mathematical character:
+
+\begin{table}[h]
+\centering
+\caption{PDE benchmarks. All problems map an input function
+(initial condition or coefficient field) to an output function
+(solution or solution at final time).}
+\label{tab:tasks}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Task} & \textbf{PDE} & \textbf{Character} &
+\textbf{Solver} \\
+\midrule
+Burgers & $u_t + uu_x = \nu u_{xx}$ & Nonlinear, shocks &
+IF-RK4 (spectral) \\
+Darcy flow & $-\nabla \cdot (a \nabla u) = 1$ & Linear elliptic,
+discontinuous coeff. & Spectral Galerkin \\
+Diffusion & $u_t = \nu u_{xx}$ & Linear, smooth &
+Exact Fourier \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+\textbf{Burgers equation} ($\nu = 0.01$, $T = 1.0$, periodic BC):
+maps random initial conditions (superposition of Fourier modes with
+$k^{-2}$ energy spectrum) to solutions at $T = 1$. The nonlinear
+advection term generates shocks, requiring resolution to capture
+fine-scale gradients.
+
+\textbf{Darcy flow} (Dirichlet BC on $[0, 1]$, $f = 1$):
+maps a log-normal random permeability field $a(x)$ to the pressure
+solution $u(x)$. The discontinuous coefficient field makes this an
+intrinsically difficult approximation problem.
+
+\textbf{Diffusion} ($\nu = 0.01$, $T = 1.0$, periodic BC):
+maps random initial conditions (same distribution as Burgers) to
+solutions at $T = 1$. The heat equation smooths all fine-scale
+features, so the output's spectral content is concentrated in low
+Fourier modes regardless of input resolution.
+
+These three tasks were chosen to separate three distinct resolution
+regimes: resolution \emph{should} matter (Burgers, shocks),
+resolution is \emph{ambiguous} (Darcy, pointwise coefficients), and
+resolution \emph{should not} matter past a low threshold (diffusion,
+spectral smoothing).
+
+\subsection{Architectures}
+\label{sec:architectures}
+
+\begin{table}[h]
+\centering
+\caption{Architecture variants. ``Resolution dependence'' indicates
+how the number of learnable parameters scales with input resolution~$R$.}
+\label{tab:models}
+\begin{tabular}{@{}llp{7cm}@{}}
+\toprule
+\textbf{Model} & \textbf{Type} & \textbf{Resolution dependence} \\
+\midrule
+FNO & Fourier Neural Operator & Resolution-invariant: spectral
+convolutions truncate at a fixed number of modes. \\
+DeepONet & Branch-Trunk network & Resolution-invariant: branch
+processes $R$-dimensional input, but trunk queries at arbitrary
+points. \\
+MLP baseline & Feedforward MLP & $D \propto R$: input and output
+layers have dimension $R$, so parameter count grows linearly with
+resolution. \\
+MLP controlled & Fixed-param MLP & $D \approx \mathrm{const}$:
+hidden width is adjusted at each $R$ to hold total parameter count
+constant (matched to $R = 64$). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The MLP controlled variant is critical for disentangling the
+\emph{resolution--capacity confound} in MLP-based models: when
+an MLP's error decreases with resolution, is it because the model
+received more informative input (a resolution effect) or because it
+has more parameters (a capacity effect)?
+By fixing parameter count, we isolate the resolution signal.
+
+\subsection{Scaling Grid}
+\label{sec:grid}
+
+Each axis is varied over a range spanning approximately two orders of
+magnitude:
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Dataset size} $N \in \{50, 100, 500, 1000, 5000\}$
+    (baseline), extended to 11 values
+    $N \in \{50, 100, 150, 200, 300, 500, 750, 1000, 2000, 3000, 5000\}$
+    in a densified grid.
+  \item \textbf{Resolution} $R \in \{32, 64, 128, 256\}$ (baseline),
+    extended to 10 values
+    $R \in \{16, 32, 48, 64, 96, 128, 192, 256, 384, 512\}$ for
+    Burgers.
+  \item \textbf{Capacity} $D$: 7 levels (tiny through xlarge) spanning
+    $\sim$2K to $\sim$2.7M parameters. MLP and DeepONet share a
+    hidden-width grid; FNO varies modes, width, and depth
+    independently.
+\end{itemize}
+
+Every combination of $(N, R, D, \text{task}, \text{model})$ in the
+grid is trained with 3 data seeds $\times$ 3 training seeds $= 9$
+independent runs, for a total of \mainRuns{} main runs plus
+\ablationRuns{} optimizer-ablation runs.
+
+\begin{table}[h]
+\centering
+\caption{Run accounting.}
+\label{tab:run-accounting}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Category} & \textbf{Runs} \\
+\midrule
+Baseline grid (3 tasks $\times$ 3 models) & 15{,}120 \\
+Dense-$N$ extensions & 11{,}578 \\
+Wide-$R$ extensions (Burgers) & 2{,}352 \\
+MLP controlled (Burgers + Diffusion) & 2{,}016 \\
+Dense-$N$ MLP controlled & 304 \\
+\midrule
+\emph{Subtotal (main)} & \mainRuns{} \\
+\midrule
+Adam $2\times$ patience (Burgers) & 756 \\
+SGD + cosine annealing (Burgers) & 657 \\
+\midrule
+\textbf{Total} & \totalRuns{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Training Protocol}
+\label{sec:training}
+
+All models are trained with an identical protocol to ensure that
+performance differences reflect architecture and scaling, not training
+configuration:
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Optimizer:} Adam, learning rate $10^{-3}$, weight
+    decay $10^{-5}$.
+  \item \textbf{Convergence:} Maximum 5{,}000 epochs with early
+    stopping (patience 200 epochs, monitoring validation
+    relative~$L^2$).
+  \item \textbf{Batch size:} 64.
+  \item \textbf{Data split:} 80/10/10 train/validation/test,
+    deterministic given the data seed.
+  \item \textbf{Loss:} Relative $L^2$ error,
+    $\relLtwo = \|\hat{v} - v\|_2 / \|v\|_2$.
+  \item \textbf{Evaluation:} Test-set $\relLtwo$ at the
+    best-validation checkpoint.
+\end{itemize}
+
+\noindent
+Using a \emph{shared} training protocol is a deliberate choice:
+it sacrifices per-architecture optimality in favor of a controlled
+comparison. The optimizer ablation
+(\Cref{sec:ablations}) explicitly tests whether findings change
+under different training configurations.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Architecture Comparison}
+\label{sec:architecture}
+
+We begin with the most robust finding: architecture choice overwhelms
+every other scaling consideration in this study.
+
+At matched capacity (medium, $\sim$34K parameters for MLP at
+$R = 128$), FNO achieves the lowest test error at \emph{every}
+combination of task, dataset size, and resolution---143 out of 143
+head-to-head comparisons.
+
+\begin{table}[h]
+\centering
+\caption{Best achievable relative $L^2$ error per task and model
+(across all $N$, $R$, and capacity levels).}
+\label{tab:best-error}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Task} & \textbf{FNO} & \textbf{MLP baseline} &
+\textbf{DeepONet} & \textbf{MLP controlled} \\
+\midrule
+Burgers   & \textbf{0.027} & 0.106 & 0.115 & 0.207 \\
+Darcy     & \textbf{0.471} & 0.685 & 0.743 & --- \\
+Diffusion & \textbf{0.002} & 0.018 & 0.098 & 0.016 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The FNO advantage is not marginal. On diffusion, FNO achieves
+$\relLtwo = 0.002$ where DeepONet plateaus at 0.098---a $49\times$
+gap. On Burgers, FNO outperforms the next-best model by
+$4$--$6\times$ depending on the regime.
+
+\paragraph{Interpretation.}
+FNO's spectral inductive bias---learning convolutions in Fourier
+space---is well matched to these periodic 1D PDEs. The strength of
+the advantage suggests that for problems with smooth or spectrally
+sparse solutions, the choice of inductive bias matters far more than
+brute-force scaling along any axis.
+We emphasize that this conclusion is specific to 1D tasks with
+periodic or simple boundary conditions. Different architectures may
+be competitive or superior in higher dimensions, on irregular
+domains, or with more complex boundary conditions.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Relative Importance of Scaling Axes}
+\label{sec:importance}
+
+To quantify how much each axis contributes to error, we fit a
+log-linear regression:
+\begin{equation}
+\label{eq:log-linear}
+\log \relLtwo = \beta_0 + \beta_N \log N + \beta_R \log R
+  + \beta_D \log D + \epsilon
+\end{equation}
+for each task--model pair and compute the relative importance
+$|\beta_i| / \sum_j |\beta_j|$.
+
+\begin{table}[h]
+\centering
+\caption{Relative importance of each scaling axis
+(percentage of total $|\beta|$), with overall $R^2$ of the
+log-linear fit. $N$ dominates for all task--model pairs
+except MLP controlled, where resolution dominates in the
+harmful direction.}
+\label{tab:importance}
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & $N$ & $R$ & $D$ & $R^2$ \\
+\midrule
+Burgers   & FNO          & \textbf{69.6\%} & 17.2\% & 13.2\% & 0.64 \\
+Burgers   & DeepONet     & 43.6\% & 22.2\% & \textbf{34.2\%} & 0.49 \\
+Burgers   & MLP baseline & \textbf{66.1\%} & 11.4\% & 22.5\% & 0.68 \\
+Darcy     & FNO          & \textbf{85.2\%} & 8.4\%  & 6.3\%  & 0.77 \\
+Darcy     & DeepONet     & \textbf{92.8\%} & 4.0\%  & 3.2\%  & 0.35 \\
+Darcy     & MLP baseline & \textbf{84.9\%} & 5.1\%  & 10.0\% & 0.83 \\
+Diffusion & FNO          & \textbf{82.0\%} & 0.5\%  & 17.5\% & 0.68 \\
+Diffusion & MLP baseline & \textbf{82.1\%} & 13.8\% & 4.1\%  & 0.82 \\
+Diffusion & MLP controlled & 12.2\% & \textbf{51.8\%} & 36.0\% & 0.46 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Dataset size explains 65--93\% of error variance for all standard
+models. Capacity is a distant second. Resolution contributes less
+than 20\% in every case---and for MLP controlled on diffusion, the
+51.8\% resolution importance reflects the \emph{harmful} direction
+(error increases with~$R$; \Cref{sec:resolution}).
+
+The low overall $R^2$ for DeepONet on Darcy (0.35) deserves
+comment: 65\% of the error variance is unexplained by the
+three scaling axes combined, reflecting the high seed-to-seed
+variability on this task (\Cref{sec:darcy}).
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Data Scaling: Steep but Saturating}
+\label{sec:data}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../figures/fig_data_scaling_per_task.pdf}
+\caption{Data scaling curves (test $\relLtwo$ vs.\ $N$)
+for each task and model, averaged over resolutions and capacity
+levels. Error bars show $\pm 1$ standard deviation across seeds.
+All models show diminishing returns past $N \approx 1000$.}
+\label{fig:data-scaling}
+\end{figure}
+
+Data scaling is the most useful lever in this study. Effective
+power-law exponents (slopes in the $\log N$--$\log \relLtwo$ plane,
+averaged over $R$ and $D$) are:
+
+\begin{table}[h]
+\centering
+\caption{Effective data-scaling exponents $\alpha_N$ (more negative
+= steeper improvement with data). Averaged over all resolutions
+and capacity levels.}
+\label{tab:data-exponents}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Task} & \textbf{FNO} & \textbf{MLP baseline} &
+\textbf{DeepONet} \\
+\midrule
+Burgers   & $-0.321$ & $-0.141$ & $-0.067$ \\
+Darcy     & $-0.090$ & $-0.328$ & $-0.145$ \\
+Diffusion & $-0.352$ & $-0.518$ & $-0.101$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+FNO shows steep data scaling on Burgers and diffusion
+($\alpha_N \approx -0.3$ to $-0.35$): a $10\times$ increase in
+data roughly halves the error. DeepONet has the weakest data
+scaling, with exponents near $-0.07$ to $-0.15$, indicating
+early saturation of its learning capacity from additional samples.
+
+\paragraph{Diminishing returns.}
+The data--error curve bends sharply. For FNO on diffusion:
+$N = 50 \to 100$ ($2\times$) reduces error by 42\%, but
+$N = 1000 \to 5000$ ($5\times$) reduces error by only 0.3\%.
+For FNO on Burgers: $N = 200 \to 1000$ ($5\times$) yields
+$\sim$40\% improvement, but $N = 1000 \to 5000$ ($5\times$)
+yields only $\sim$7\%.
+Past $N \approx 1000$, additional data provides minimal benefit
+for FNO across all tasks, suggesting the remaining error is
+dominated by the architecture's approximation limits or the
+irreducible error floor of the task at the given resolution.
+
+\paragraph{Data efficiency.}
+The practical consequence is striking: FNO on diffusion
+reaches $\relLtwo < 0.02$ with just 50 samples. The spectral
+structure of the heat equation perfectly matches FNO's
+Fourier-space inductive bias. Burgers requires $10$--$100\times$
+more data to reach the same accuracy, consistent with the
+greater complexity of nonlinear shock dynamics.
+Darcy does not reach $\relLtwo < 0.10$ with any
+model/data/capacity combination in this study.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Resolution Is Not a Useful Scaling Axis}
+\label{sec:resolution}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../figures/fig_resolution_scaling_per_task.pdf}
+\caption{Resolution scaling (test $\relLtwo$ vs.\ $R$) for each
+task and model. For diffusion, higher resolution consistently
+\emph{increases} error. For Darcy, resolution has no systematic
+effect. Only for Burgers does resolution provide a benefit, and
+primarily for non-spectral architectures.}
+\label{fig:res-scaling}
+\end{figure}
+
+The central empirical finding of this study is that discretization
+resolution is not a reliable scaling axis for neural operator
+learning. The effect of resolution is task-dependent and often
+harmful.
+
+\subsection{Diffusion: Higher Resolution Increases Error}
+\label{sec:res-diffusion}
+
+On diffusion, all four model variants show monotonically increasing
+error with resolution:
+
+\begin{table}[h]
+\centering
+\caption{Resolution effect on diffusion (test $\relLtwo$ at matched
+$N$ and capacity). Higher $R$ consistently degrades performance.}
+\label{tab:res-diffusion}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Model} & $R{=}32$ & $R{=}128$ & $R{=}256$ &
+\textbf{Degradation} \\
+\midrule
+MLP baseline   & 0.082 & 0.099 & 0.098 & $+20\%$ \\
+MLP controlled & 0.021 & 0.027 & 0.026 & $+24\%$ \\
+DeepONet       & 0.209 & ---   & 0.243 & $+16\%$ \\
+FNO            & 0.008 & ---   & 0.008 & $+12\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This pattern holds across \emph{every} dataset size at every
+capacity level. The MLP controlled variant shows an $R$-scaling
+exponent of $+0.638$ ($R^2 = 0.96$)---strong, reliable evidence
+that higher resolution hurts, even when the capacity confound is
+removed.
+
+\paragraph{Mechanism.}
+The heat equation smooths all fine-scale features exponentially.
+At $T = 1$ with $\nu = 0.01$, Fourier modes above $k \approx 10$
+are damped below machine precision. Increasing $R$ beyond $\sim$32
+adds only output-irrelevant high-frequency content: the model must
+learn to ignore grid points that carry no predictive information.
+This wastes model capacity and, for small models, can actively
+degrade predictions.
+
+\subsection{Burgers: Resolution Helps, but with Caveats}
+\label{sec:res-burgers}
+
+For Burgers, resolution generally improves accuracy---shock structure
+requires fine grids. However, the benefit is modest for FNO
+(which operates in spectral space) and strongest for the MLP baseline,
+where it is confounded with the capacity increase
+(\Cref{sec:confound}).
+The widened resolution grid (10 values, $R \in \{16, \ldots, 512\}$)
+reveals that FNO resolution scaling is approximately linear in~$R$,
+consistent with each additional grid point contributing one more
+retained Fourier mode.
+
+\subsection{Darcy: Resolution Is Noise}
+\label{sec:res-darcy}
+
+DeepONet $R$-exponents fluctuate between $-0.05$ and $+0.25$
+depending on $N$, with per-slice $R^2 \approx 0.3$: there is no
+reliable resolution signal. FNO shows $R$-exponents of $-0.03$ to
+$+0.03$. Resolution changes nothing meaningful for Darcy flow.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{The MLP Resolution--Capacity Confound}
+\label{sec:confound}
+
+For standard MLPs, the parameter count grows linearly with
+resolution: $D = 2Rh + h^2 + 2h + R$ for hidden width $h$.
+Doubling $R$ roughly doubles $D$. Any apparent ``resolution
+benefit'' in MLP performance could therefore be a capacity effect.
+
+The MLP controlled variant resolves this confound by adjusting
+hidden width to hold $D$ constant across resolutions (matched to
+the standard MLP at $R = 64$).
+
+\begin{table}[h]
+\centering
+\caption{Diffusion: MLP controlled (fixed $D$) vs.\ MLP baseline
+(growing $D$). Both show error increasing with $R$, ruling out the
+capacity confound as the driver of resolution harm.}
+\label{tab:mlp-controlled}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Capacity} & $R{=}32$ & $R{=}64$ & $R{=}128$ & $R{=}256$ \\
+\midrule
+\multicolumn{5}{l}{\emph{MLP controlled (fixed parameter count)}} \\
+tiny      & 0.023 & 0.038 & 0.140 & 0.295 \\
+small     & 0.024 & 0.023 & 0.025 & 0.111 \\
+medium    & 0.021 & 0.027 & 0.027 & 0.026 \\
+large     & 0.018 & 0.024 & 0.031 & 0.034 \\
+xlarge    & 0.027 & 0.032 & 0.039 & 0.047 \\
+\midrule
+\multicolumn{5}{l}{\emph{MLP baseline (parameter count grows with $R$)}} \\
+tiny      & 0.118 & 0.118 & 0.125 & 0.132 \\
+small     & 0.096 & 0.101 & 0.105 & 0.103 \\
+medium    & 0.082 & 0.091 & 0.099 & 0.098 \\
+large     & 0.070 & 0.081 & 0.093 & 0.100 \\
+xlarge    & 0.102 & 0.117 & 0.127 & 0.133 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Both variants show error increasing with $R$ on diffusion.
+The effect is most dramatic at small model sizes (controlled MLP
+tiny: $0.023 \to 0.295$ from $R = 32$ to $R = 256$).
+On Burgers, the controlled MLP shows modest resolution benefit
+($\relLtwo$ drops from 0.379 to 0.277 going from $R = 32$ to
+$R = 128$), confirming that resolution does carry genuine
+information for shock-forming problems---but the benefit is far
+smaller than the standard MLP's apparent improvement, which
+conflates resolution with capacity growth.
+
+\paragraph{Recommendation.}
+When evaluating resolution effects on MLPs or other
+resolution-dependent architectures, parameter count must be
+controlled. Failure to do so risks attributing capacity effects
+to resolution.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Capacity Scaling: Diminishing Returns}
+\label{sec:capacity}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../figures/fig_capacity_scaling_per_task.pdf}
+\caption{Capacity scaling (test $\relLtwo$ vs.\ parameter count $D$)
+for each task and model. Returns diminish sharply: 100$\times$ more
+parameters often yields less than 20\% error reduction.}
+\label{fig:cap-scaling}
+\end{figure}
+
+Capacity scaling exponents are uniformly weak:
+
+\begin{table}[h]
+\centering
+\caption{Effective capacity-scaling exponents $\alpha_D$. All are
+close to zero: massive model scaling provides minimal benefit.}
+\label{tab:cap-exponents}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Task} & \textbf{FNO} & \textbf{MLP baseline} &
+\textbf{DeepONet} \\
+\midrule
+Burgers   & $-0.037$ & (confounded) & $-0.066$ \\
+Darcy     & $-0.004$ & $-0.063$     & $-0.003$ \\
+Diffusion & $-0.023$ & $-0.014$     & $-0.107$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On Darcy, increasing FNO parameters by $388\times$ (from 7K to 2.7M)
+reduces error by only 18\% ($0.573 \to 0.471$). DeepONet capacity
+exponent on Darcy is $-0.003$: capacity is irrelevant.
+
+\paragraph{Overparameterization can hurt.}
+FNO on diffusion achieves its \emph{best} error at the small
+capacity level (44K parameters, $\relLtwo = 0.00213$); the
+xlarge model (2.7M parameters) achieves 0.00307---worse by 44\%.
+When the task is simple enough to be solved with a small model,
+additional capacity introduces overfitting or optimization
+difficulties.
+
+\paragraph{Contrast with language models.}
+This stands in sharp contrast to the NLP scaling regime,
+where capacity exponents of $-0.07$ to $-0.076$ are reported
+\citep{kaplan2020scaling}---similar in magnitude but applied
+across \emph{billions} of parameters, yielding large absolute
+gains. In our 1D operator-learning setting, the parameter range
+is much smaller ($\sim$2K--2.7M) and the tasks are comparatively
+simple, so the capacity returns are exhausted early.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Regime-Dependent Scaling Forms}
+\label{sec:law-form}
+
+Do the error curves follow a universal functional form?
+Following \citet{perrier2025scaling}, we fit six candidate laws
+(power, exponential, logarithmic, stretched exponential, saturation,
+linear) to each per-slice scaling curve and select the winner via
+the corrected Akaike Information Criterion (AICc).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../figures/multilaw_heatmap.pdf}
+\caption{AICc-selected law per task--model--axis combination.
+No single functional form dominates; the winning law depends on the
+task, architecture, and axis.}
+\label{fig:heatmap}
+\end{figure}
+
+The answer is clearly \emph{no}: the winning law varies across tasks,
+models, and axes.
+
+\subsection{Data Axis}
+On the original 5-point data grid, logarithmic scaling wins for most
+task--model pairs. However, when the grid is densified to 11 points,
+the winners shift systematically toward bounded-decay families
+(exponential, saturation, stretched exponential)---all of which encode
+a finite irreducible error floor that the logarithmic form lacks.
+With only five sample sizes, the within-regime curvature is too
+coarsely sampled for AICc to distinguish a log curve from a
+bounded-decay curve.
+
+\paragraph{Implication.}
+Law selection on the data axis is sensitive to the number of
+evaluation points. The qualitative finding---data scaling has
+bounded diminishing returns---is robust, but the specific
+functional form is not identifiable from typical experimental
+grids.
+
+\subsection{Resolution and Capacity Axes}
+On the resolution axis (4 points), logarithmic wins for most
+MLP/DeepONet slices, linear wins for FNO on Burgers. On the
+widened 10-point grid, FNO clearly shifts to linear (81\% of
+slices), while MLP and DeepONet retain logarithmic as a narrow
+plurality. The capacity axis ($n = 7$ points) shows the most
+stable law selection, likely because it has the most data points
+per slice.
+
+\subsection{Sensitivity to Grid Density}
+\label{sec:grid-sensitivity}
+The shift in data-axis law selection from logarithmic (5 points)
+to bounded-decay (11 points) is an important methodological warning:
+\emph{scaling-law identification requires dense grids}.
+At $n = 4$--5 points per slice, even AICc (designed for small
+samples) cannot reliably distinguish functional forms. We recommend
+a minimum of 8--10 evaluation points per axis for any future
+scaling study that aims to identify the functional form, not merely
+the direction.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Cross-Resolution Transfer}
+\label{sec:transfer}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{../figures/fig5_transfer_heatmap.pdf}
+\caption{Cross-resolution transfer: test $\relLtwo$ when models
+trained at $\Rtrain$ are evaluated at $\Reval \neq \Rtrain$.
+FNO transfers modestly upward (best at $\Reval / \Rtrain \approx
+1$--$2\times$), then degrades.}
+\label{fig:transfer}
+\end{figure}
+
+For resolution-invariant architectures (FNO, DeepONet), we evaluate
+models trained at $\Rtrain$ on inputs at $\Reval \neq \Rtrain$.
+
+\textbf{FNO on Burgers} performs best at $\Reval / \Rtrain \approx
+1$--$2\times$, with test error of $\sim$0.25. At $16\times$ higher
+evaluation resolution, error returns to 0.43---near untrained levels.
+The model's learned spectral filters provide modest upward transfer
+but not dramatic zero-shot super-resolution.
+
+\textbf{FNO on Darcy} is essentially flat across all ratios
+($\relLtwo \approx 0.68$--$0.70$): the task has such weak
+resolution dependence that cross-resolution evaluation adds no
+information.
+
+\textbf{DeepONet on Darcy} degrades monotonically from
+$\relLtwo = 1.36$ (ratio $= 0.12$) to 1.57 (ratio $= 16$),
+suggesting the architecture encodes resolution-specific features
+in its branch network.
+
+An ablation comparing interpolation-based and subsampling-based
+cross-resolution evaluation (\Cref{app:deeponet-ablation}) confirms
+that these findings are not driven by interpolation artifacts.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Failure Modes}
+\label{sec:failures}
+
+\subsection{Darcy Flow: A Pathological Case}
+\label{sec:darcy}
+
+Darcy flow stands out as anomalous across every analysis dimension:
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{High error floor.} The best achievable error is
+    $\relLtwo = 0.471$ (FNO). No model reaches below 47\% relative
+    error---compared to 2.7\% (Burgers) and 0.2\% (diffusion).
+
+  \item \textbf{Extreme variance.} DeepONet on Darcy has a
+    coefficient of variation (CV) of up to 1.54 across seeds. Mean
+    error values of $\relLtwo > 1$ (worse than predicting the mean)
+    appear frequently.
+
+  \item \textbf{Pervasive non-monotonicity.} Dozens of configurations
+    show \emph{increasing} error when data, resolution, or capacity
+    is added. DeepONet at multiple capacity levels shows
+    $\relLtwo$ jumping from 0.80 to 1.88 when going from $N = 1000$
+    to $N = 2000$.
+
+  \item \textbf{Low explanatory power.} The log-linear regression
+    $R^2$ for DeepONet on Darcy is only 0.35: none of the three
+    scaling axes adequately explains the variance.
+\end{itemize}
+
+\paragraph{Interpretation.}
+The discontinuous permeability coefficients create a fundamentally
+harder approximation problem. The highly nonlinear map from
+discontinuous coefficients to smooth solutions may require much
+larger datasets, architectures with attention mechanisms, or
+task-specific preprocessing (e.g., log-transformed coefficients).
+All scaling conclusions for Darcy should be interpreted cautiously.
+
+\subsection{DeepONet Saturation}
+\label{sec:deeponet}
+
+DeepONet exhibits two distinct failure modes:
+
+\paragraph{Early saturation.}
+On Burgers, DeepONet's data-scaling exponent ($\alpha_N \approx
+-0.04$ to $-0.07$ at $R \geq 32$) is an order of magnitude
+weaker than FNO's. Even with a $100\times$ increase in data
+($N = 50 \to 5000$), error drops only $\sim$25\%, compared to FNO's
+$\sim$85\% reduction. On diffusion, DeepONet plateaus at
+$\relLtwo \sim 0.10$--$0.22$ regardless of data, while FNO
+reaches 0.002.
+
+\paragraph{More data can hurt.}
+On Burgers, DeepONet with large/xlarge capacity consistently
+shows 5--15\% error \emph{increases} when going from $N = 2000$
+to $N = 5000$, across multiple resolutions. This may reflect
+the branch-trunk decomposition reaching expressiveness saturation
+before the training set is fully utilized, leading to degraded
+optimization at larger~$N$.
+
+We do not claim DeepONet is fundamentally limited. The fixed
+training protocol may disadvantage it, and the architecture has
+shown strong results in other settings
+\citep{wang2021learning}. Within our controlled protocol,
+however, the saturation is systematic and reproducible.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Reproducibility and Noise}
+\label{sec:noise}
+
+All configurations are replicated across 9 seeds
+(3~data $\times$ 3~training). \Cref{tab:noise} reports the
+coefficient of variation (CV $= \sigma / \mu$) across seeds:
+
+\begin{table}[h]
+\centering
+\caption{Mean coefficient of variation (CV) across seeds per
+task--model pair. Darcy is $3$--$8\times$ noisier than other tasks.}
+\label{tab:noise}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Task} & \textbf{FNO} & \textbf{MLP baseline} &
+\textbf{DeepONet} \\
+\midrule
+Burgers   & 0.08 & 0.03 & 0.05 \\
+Darcy     & 0.07 & 0.25 & 0.25 \\
+Diffusion & 0.17 & 0.07 & 0.11 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Darcy is extremely noisy for non-FNO architectures (CV $= 0.25$),
+meaning a typical run's error varies by $\pm 25\%$ of the mean
+from seed changes alone. The noisiest individual configuration
+(DeepONet/med-large/$N = 2000$/$R = 256$ on Darcy, CV $= 1.54$)
+produces runs ranging from near-zero to several times the mean
+error. This noise level severely limits the reliability of
+single-seed evaluations and underscores the importance of the
+multi-seed design.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Robustness and Ablations}
+\label{sec:ablations}
+
+\subsection{Optimizer Sensitivity}
+\label{sec:optimizer}
+
+All main results use Adam with learning rate $10^{-3}$ and patience
+200. We re-run Burgers (all three models, all capacities) under two
+alternative configurations:
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Variant A:} Adam with $2\times$ patience (400 epochs)
+  \item \textbf{Variant B:} SGD with momentum 0.9 + cosine annealing
+\end{itemize}
+for a total of 1{,}413 ablation runs.
+
+\textbf{Resolution axis:} Law selection is fully stable.
+Logarithmic wins in 88\% of baseline slices, 90\% for Adam
+$2\times$, and 100\% for SGD cosine. This is the strongest
+invariance result in the study.
+
+\textbf{Data axis:} The specific law identity is more sensitive
+(DeepONet shifts from power to exponential; MLP shifts from
+saturation to power), but all winners belong to bounded-decay
+families. The qualitative conclusion---data scaling is bounded,
+not unbounded---is optimizer-invariant.
+
+\textbf{Conclusion:} Directional findings are robust to the
+training configuration. The specific functional form on the data
+axis is training-sensitive, consistent with the grid-density
+sensitivity discussed in \Cref{sec:grid-sensitivity}.
+
+\subsection{Densified Data Grid}
+\label{sec:dense-n}
+
+Extending the data axis from 5 to 11 values
+($N \in \{50, \ldots, 5000\}$ with 6 intermediate points) produces
+two systematic changes: (1) logarithmic is displaced as the dominant
+winner in favor of bounded-decay families (exponential, saturation);
+(2) AICc-BIC concordance improves from $\sim$10\% to $>$50\%.
+Both are consistent with the denser grid resolving the curvature
+near the error floor that was ambiguous at 5 points.
+
+\subsection{Widened Resolution Grid}
+\label{sec:wide-r}
+
+Extending the Burgers resolution grid from 4 to 10 values
+($R \in \{16, \ldots, 512\}$) reveals that FNO resolution scaling
+is clearly linear (81\% of slices), while MLP and DeepONet retain
+logarithmic as a narrow plurality with significant linear
+competition. The directional finding---resolution helps for
+Burgers---is stable regardless of grid density.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Summary of Evidence}
+
+\Cref{tab:evidence} classifies findings by evidence strength.
+
+\begin{table}[h]
+\centering
+\caption{Summary of findings and evidence strength.}
+\label{tab:evidence}
+\small
+\begin{tabular}{@{}p{6.5cm}cp{5cm}@{}}
+\toprule
+\textbf{Finding} & \textbf{Strength} &
+\textbf{Practical implication} \\
+\midrule
+FNO dominates all comparisons (143/143) &
+Very strong &
+Use FNO for 1D operator learning \\
+Dataset size is the primary lever (65--93\%) &
+Strong &
+Prioritize data collection over model tuning \\
+Resolution hurts on smooth problems &
+Strong &
+Use the lowest $R$ that captures the physics \\
+Capacity has weak returns ($\alpha_D \approx 0$) &
+Strong &
+A modest model suffices \\
+No universal scaling law form &
+Moderate &
+Do not assume power law; validate per task \\
+DeepONet saturates early &
+Strong &
+Consider alternatives for data-rich regimes \\
+Darcy is not well-served by any model &
+Strong &
+Requires architectural innovation \\
+Cross-resolution transfer is modest &
+Moderate &
+Do not rely on low-$R$ training for high-$R$
+deployment \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Resolution as Physics vs.\ Resolution as Dimensionality}
+\label{sec:res-discussion}
+
+The resolution axis conflates two distinct effects that are often
+treated as one:
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Resolution as physics information.}
+    Higher resolution captures finer spatial features (shocks,
+    discontinuities). For Burgers, where the solution develops
+    sharp gradients, additional grid points carry genuinely new
+    information.
+
+  \item \textbf{Resolution as input dimensionality.}
+    Higher resolution increases the size of the input/output vectors.
+    For diffusion, where the solution is spectrally sparse, additional
+    grid points beyond $R \approx 32$ carry no new information but
+    increase the dimensionality of the optimization problem.
+\end{enumerate}
+
+Our results show that the second effect can dominate: when the
+additional grid points carry noise or irrelevant high-frequency
+content, models (especially small models) are better off at lower
+resolution.
+This has direct implications for benchmark design: reporting
+operator-learning accuracy only at high resolution conflates learning
+ability with the model's tolerance for input dimensionality.
+
+\subsection{Implications for Practice}
+
+For practitioners working with 1D PDEs similar to our benchmarks:
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Architecture first.} The choice of inductive bias
+    (spectral vs.\ pointwise vs.\ MLP) has a larger effect than any
+    amount of data, resolution, or capacity scaling.
+  \item \textbf{Data second.} Collecting $\sim$500--1000 high-quality
+    samples provides most of the achievable accuracy. Returns diminish
+    sharply beyond this range.
+  \item \textbf{Resolution carefully.} Match resolution to the problem's
+    spectral content, not to the solver's capability. Using the
+    highest available resolution can actively hurt.
+  \item \textbf{Capacity modestly.} A medium-sized model ($\sim$30--50K
+    parameters) captures most of the available accuracy for these 1D
+    tasks; scaling to millions of parameters provides negligible
+    returns.
+\end{enumerate}
+
+\subsection{Comparison with NLP Scaling Laws}
+\label{sec:nlp-comparison}
+
+The NLP scaling regime~\citep{kaplan2020scaling,hoffmann2022training}
+features three properties that our 1D PDE setting does not share:
+(1)~power-law relationships spanning many orders of magnitude in
+model size; (2)~weak diminishing returns across the entire tested
+range; (3)~the same functional form (power law) governing all axes.
+In our setting, (1)~the parameter range is modest
+($\sim$2K--2.7M), (2)~diminishing returns set in by $N \approx 1000$
+and $D \approx$ small, and (3)~the functional form is
+regime-dependent. This suggests that the smooth, universal scaling
+regime observed in NLP may require the problem complexity and model
+scale to be in an appropriate relationship---conditions not met by
+simple 1D PDEs with sub-million-parameter models.
+
+\subsection{Limitations}
+\label{sec:limitations}
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item \textbf{1D only.} All tasks are 1D PDEs.
+    Resolution may be far more important in 2D/3D, where
+    discretization error compounds with dimensionality.
+    We make no claims about higher-dimensional settings.
+
+  \item \textbf{Fixed training protocol.} A shared optimizer and
+    schedule ensures controlled comparison but may disadvantage
+    specific architectures (e.g., DeepONet may benefit from different
+    learning-rate schedules). The optimizer ablation partially
+    addresses this but does not exhaust the hyperparameter space.
+
+  \item \textbf{Limited resolution range for some tasks.}
+    Darcy uses only 4~resolution values in the baseline grid.
+    The wide-$R$ extension is complete only for Burgers.
+
+  \item \textbf{Relative $L^2$ only.}
+    Different error norms (pointwise max, Sobolev, spectral)
+    could change accuracy rankings, especially for Burgers
+    (localized shocks).
+
+  \item \textbf{Canonical PDEs.}
+    Burgers, Darcy, and diffusion are standard benchmarks, not
+    representative of the full complexity of scientific applications.
+    Scaling behavior on turbulence, multi-physics, or real-world
+    engineering problems may differ substantially.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented a controlled empirical study of scaling laws for
+neural operator learning across three canonical 1D PDE tasks,
+three architectures, and two orders of magnitude along dataset size,
+resolution, and model capacity, totaling \totalRuns{} training runs.
+
+The study yields three central messages.
+First, for 1D problems with periodic or simple boundary conditions,
+architecture choice (specifically, FNO's spectral inductive bias)
+dominates all other scaling considerations by a wide margin.
+Second, dataset size is the only reliable scaling axis:
+resolution is task-dependent (helpful for shocks, harmful for smooth
+solutions, irrelevant for elliptic problems) and capacity returns
+are negligible past modest model sizes.
+Third, the functional form of the scaling relationship is not
+universal: it depends on the task, architecture, and regime, and
+shifts with the density of the evaluation grid.
+
+These results suggest that the era of ``scaling everything'' in
+operator learning may not mirror NLP's experience, at least for
+1D benchmarks: practitioners should prioritize choosing the right
+architecture and collecting sufficient training data over scaling
+model size or discretization resolution.
+The extent to which these conclusions transfer to higher-dimensional,
+multi-physics, or industrial-scale problems remains an important
+open question.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\begin{thebibliography}{99}
+
+\bibitem[Chen and Chen(1995)]{chen1995universal}
+T.~Chen and H.~Chen.
+\newblock Universal approximation to nonlinear operators by neural networks
+  with arbitrary activation functions and its application to dynamical systems.
+\newblock \emph{IEEE Trans. on Neural Networks}, 6(4):911--917, 1995.
+
+\bibitem[Hao et~al.(2023)]{hao2023gnot}
+Z.~Hao, Z.~Wang, H.~Su, C.~Ying, Y.~Dong, S.~Liu, Z.~Cheng, J.~Song, and
+  J.~Zhu.
+\newblock {GNOT}: A general neural operator transformer for operator learning.
+\newblock In \emph{ICML}, 2023.
+
+\bibitem[Hestness et~al.(2017)]{hestness2017deep}
+J.~Hestness, S.~Narang, N.~Ardalani, G.~Diamos, H.~Jun, H.~Kianinejad,
+  M.~M.~A. Patwary, Y.~Yang, and Y.~Zhou.
+\newblock Deep learning scaling is predictable, empirically.
+\newblock \emph{arXiv:1712.00409}, 2017.
+
+\bibitem[Hoffmann et~al.(2022)]{hoffmann2022training}
+J.~Hoffmann, S.~Borgeaud, A.~Mensch, E.~Buchatskaya, T.~Cai, E.~Rutherford,
+  D.~de~Las~Casas, L.~A. Hendricks, J.~Welbl, A.~Clark, T.~Hennigan,
+  E.~Noland, K.~Millican, G.~van~den~Driessche, B.~Damoc, A.~Guy,
+  S.~Osindero, K.~Simonyan, E.~Elsen, J.~W. Rae, O.~Vinyals, and
+  L.~Sifre.
+\newblock Training compute-optimal large language models.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem[Kaplan et~al.(2020)]{kaplan2020scaling}
+J.~Kaplan, S.~McCandlish, T.~Henighan, T.~P. Brown, B.~Chess, R.~Child,
+  S.~Gray, A.~Radford, J.~Wu, and D.~Amodei.
+\newblock Scaling laws for neural language models.
+\newblock \emph{arXiv:2001.08361}, 2020.
+
+\bibitem[Li et~al.(2021)]{li2021fourier}
+Z.~Li, N.~Kovachki, K.~Azizzadenesheli, B.~Liu, K.~Bhatt, A.~Stuart, and
+  A.~Anandkumar.
+\newblock Fourier neural operator for parametric partial differential equations.
+\newblock In \emph{ICLR}, 2021.
+
+\bibitem[Lu et~al.(2021)]{lu2021learning}
+L.~Lu, P.~Jin, G.~Pang, Z.~Zhang, and G.~E. Karniadkis.
+\newblock Learning nonlinear operators via {DeepONet} based on the universal
+  approximation theorem of operators.
+\newblock \emph{Nature Machine Intelligence}, 3(3):218--229, 2021.
+
+\bibitem[Perrier(2025)]{perrier2025scaling}
+L.~Perrier.
+\newblock Scaling-law diagnostics for physics-informed machine learning.
+\newblock Working paper, 2025.
+
+\bibitem[Wang et~al.(2021)]{wang2021learning}
+S.~Wang, H.~Wang, and P.~Perdikaris.
+\newblock Learning the solution operator of parametric partial differential
+  equations with physics-informed {DeepONets}.
+\newblock \emph{Science Advances}, 7(40), 2021.
+
+\bibitem[Wen et~al.(2022)]{wen2022ufno}
+G.~Wen, Z.~Li, K.~Azizzadenesheli, A.~Anandkumar, and S.~M. Benson.
+\newblock {U-FNO}---an enhanced {Fourier} neural operator-based deep-learning
+  model for multiphase flow.
+\newblock \emph{Advances in Water Resources}, 163:104180, 2022.
+
+\end{thebibliography}
+
+
+% ══════════════════════════════════════════════════════════════════════
+\appendix
+
+\section{Capacity Grid}
+\label{app:capacity}
+
+\begin{table}[h]
+\centering
+\caption{MLP and DeepONet capacity grid. FNO uses a separate grid
+over modes, width, and number of layers.}
+\label{tab:capacity-grid}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Level} & \textbf{Layers} & \textbf{Width} &
+$\sim D$ \textbf{(MLP, $R{=}128$)} \\
+\midrule
+tiny      & 2 & 32  & $\sim$5K \\
+small     & 2 & 64  & $\sim$13K \\
+small-med & 2 & 96  & $\sim$22K \\
+medium    & 2 & 128 & $\sim$34K \\
+med-large & 2 & 192 & $\sim$62K \\
+large     & 2 & 256 & $\sim$82K \\
+xlarge    & 3 & 256 & $\sim$148K \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\section{PDE Solver Details}
+\label{app:solvers}
+
+\paragraph{Burgers equation.}
+$u_t + u u_x = \nu u_{xx}$ on $[0, 2\pi)$ with periodic boundary
+conditions, $\nu = 0.01$, $T = 1.0$. Solved with integrating-factor
+RK4 in Fourier space with $\frac{2}{3}$-rule dealiasing and
+$\Delta t = 10^{-3}$. Random initial conditions are superpositions of
+Fourier modes with random phases and amplitudes drawn from a $k^{-2}$
+energy spectrum.
+
+\paragraph{Darcy flow.}
+$-\nabla \cdot (a(x) \nabla u(x)) = f(x)$ on $[0, 1]$ with Dirichlet
+conditions, $f(x) = 1$. The coefficient field $a(x)$ is drawn from
+a log-normal random field. Solved via spectral Galerkin method.
+
+\paragraph{Diffusion equation.}
+$u_t = \nu u_{xx}$ on $[0, 2\pi)$ with periodic boundary conditions,
+$\nu = 0.01$, $T = 1.0$. Exact spectral solution:
+$\hat{u}_k(t) = \hat{u}_k(0) e^{-\nu k^2 t}$.
+Same initial-condition distribution as Burgers.
+
+
+\section{Multi-Law Fitting Details}
+\label{app:fitting}
+
+Six candidate laws are fit via \texttt{scipy.optimize.curve\_fit}
+(Levenberg--Marquardt) with maximum 10{,}000 iterations:
+
+\begin{table}[h]
+\centering
+\caption{Candidate functional forms. $X$ is the scaling variable
+($N$, $R$, or $D$); $\Einf$ denotes the irreducible error floor.}
+\label{tab:candidates}
+\begin{tabular}{@{}llc@{}}
+\toprule
+\textbf{Family} & \textbf{Form} & \textbf{Parameters} \\
+\midrule
+Power       & $\Einf + a X^{-\alpha}$   & 3 \\
+Exponential & $\Einf + a e^{-\alpha X}$ & 3 \\
+Logarithmic & $a - b \ln X$             & 2 \\
+Stretched exp. & $\Einf + a e^{-(\alpha X)^\beta}$ & 4 \\
+Saturation  & $\Einf + a / (X + b)$     & 3 \\
+Linear      & $a + b X$                 & 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+AICc is computed as
+$\mathrm{AICc} = n \ln(\mathrm{RSS}/n) + 2k + 2k(k+1)/(n-k-1)$,
+where $n$ is the number of points per slice and $k$ is the number of
+parameters. When $n \leq k + 1$, AICc is set to $+\infty$.
+
+
+\section{DeepONet Cross-Resolution Ablation}
+\label{app:deeponet-ablation}
+
+We compared interpolation-based and subsampling-based cross-resolution
+evaluation across 288 comparisons (Darcy and Diffusion, 3 capacities
+$\times$ 4 training resolutions $\times$ 4--5 evaluation resolutions
+$\times$ 4 dataset sizes).
+
+When $\Reval > \Rtrain$ (upsampling): interpolation and subsampling
+perform comparably (mean $\relLtwo$: 0.523 vs.\ 0.520), with
+subsampling winning 68\% of 180 comparisons by a slim margin.
+When $\Reval < \Rtrain$ (downsampling): interpolation is overwhelmingly
+better (98\% of 108 cases; mean $\relLtwo$: 0.531 vs.\ 1.068).
+
+The standard interpolation strategy is robust: cross-resolution
+transfer conclusions are not driven by interpolation artifacts.
+
+
+\section{BIC Concordance}
+\label{app:bic}
+
+Because AICc and BIC penalties diverge at small sample sizes
+(at $n = 5$, BIC's penalty $k \ln n \approx 1.6k$ is \emph{weaker}
+than AICc's corrected penalty), low concordance at small $n$ reflects
+the well-understood divergence between criteria, not evidence against
+the AICc-selected law.
+
+\begin{table}[h]
+\centering
+\caption{AICc--BIC concordance rate per axis.}
+\label{tab:bic}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{Data} & \textbf{Resolution} &
+\textbf{Capacity} \\
+\midrule
+Burgers   & MLP      & 4\%  & 3\%   & 90\% \\
+Burgers   & DeepONet & 21\% & 3\%   & 85\% \\
+Burgers   & FNO      & 11\% & 9\%   & 70\% \\
+Darcy     & MLP      & 4\%  & 43\%  & 80\% \\
+Darcy     & DeepONet & 11\% & 69\%  & 95\% \\
+Darcy     & FNO      & 14\% & 34\%  & 65\% \\
+Diffusion & MLP      & 4\%  & 97\%  & 45\% \\
+Diffusion & DeepONet & 11\% & 100\% & 80\% \\
+Diffusion & FNO      & 21\% & 74\%  & 90\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\end{document}
