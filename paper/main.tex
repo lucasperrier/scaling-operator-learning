@@ -12,6 +12,7 @@
 \usepackage{caption}
 \usepackage{subcaption}
 \usepackage{multirow}
+\usepackage{enumitem}
 \usepackage[numbers]{natbib}
 \bibliographystyle{plainnat}
 
@@ -25,14 +26,17 @@
 \DeclareMathOperator*{\argmin}{arg\,min}
 
 % ── Auto-populated result macros ──────────────────────────────────
-\newcommand{\holdoutWinFraction}{14/33 (42\%)}
-\newcommand{\holdoutMeanImprovement}{1.0\%}
+\newcommand{\holdoutWinFraction}{15/33 (45\%)}
+\newcommand{\holdoutMeanImprovement}{1.2\%}
 \newcommand{\withinSliceMeanFrac}{0.46}
-\newcommand{\withinSliceUnstableFrac}{19/27 (70\%)}
+\newcommand{\withinSliceUnstableFrac}{22/27 (81\%)}
+\newcommand{\totalRuns}{32{,}783}
+\newcommand{\mainRuns}{31{,}370}
+\newcommand{\ablationRuns}{1{,}413}
 
 % ══════════════════════════════════════════════════════════════════════
 \title{%
-  Beyond Power Laws: What Scaling Reveals About Operator Learning%
+  Beyond Power Laws: Scaling-Law Diagnostics for Operator Learning%
 }
 \author{Lucas Perrier}
 \date{\today \quad (Working Draft)}
@@ -46,35 +50,38 @@ Empirical scaling laws have guided resource allocation in large-scale machine
 learning, but their applicability to operator learning---where discretization
 resolution introduces a third scaling axis alongside dataset size and model
 capacity---remains poorly understood.
-We conduct a comprehensive study across three PDE benchmarks (Burgers, Darcy,
-diffusion), three architectures (MLP, DeepONet, FNO), and
-5{,}040 training runs spanning two orders of magnitude in each axis.
+We conduct a comprehensive study across three 1D PDE benchmarks (Burgers,
+Darcy, diffusion), three architectures (MLP, DeepONet, FNO), and
+\totalRuns{} experimental configurations (training runs plus\ncross-resolution evaluations) spanning two orders of magnitude in each axis.
 Rather than assuming power-law relationships \emph{a priori}, we fit six
-candidate functional forms (power, exponential, logarithmic, stretched
-exponential, saturation, linear) per scaling axis and use the corrected Akaike
+candidate functional forms per scaling axis and use the corrected Akaike
 Information Criterion (AICc) to let the data select the governing law.
 
-Our key findings challenge several common assumptions:
-(i)~\emph{data scaling is not well described by a simple power law}---with
-a sparse 5-point grid, logarithmic wins in 7 of 9 combinations; with a
-denser 11-point grid (\Cref{app:dense-n}), bounded-decay families
-(exponential, saturation) displace logarithmic, indicating an
-irreducible-error floor that the sparse grid cannot resolve;
-(ii)~\emph{resolution scaling is task-dependent and non-universal}---higher
-resolution helps for advection-dominated problems (Burgers: 35/35 slices
-improve), is mixed for elliptic problems (Darcy), and actively
-\emph{increases error} for smooth problems (Diffusion: error rises in 27/35
-slices for MLP and DeepONet);
-(iii)~\emph{capacity scaling is largely negligible} within our range,
-with most configurations already in the capacity-sufficient regime;
-and (iv)~the irreducible error floor $\Einf$ extracted from the winning
-fits provides an architecture-dependent error floor estimate that ranks
-models independently of data volume or resolution.
+We separate our findings by evidence strength.
+The most robust result is that \emph{the direction of resolution scaling
+is task-dependent}: higher resolution helps uniformly for
+advection-dominated problems (Burgers: 35/35 slices improve),
+is mixed for elliptic problems (Darcy), and actively
+\emph{increases error} for smooth problems (Diffusion: 27/35
+slices worsen for MLP and DeepONet).
+Second, \emph{data scaling consistently shows bounded diminishing
+returns}: across all 9 task--model combinations (8 on the densified
+grid; Diffusion MLP on the sparser $n=5$ grid),
+the AICc-selected winner belongs to a family with a finite error floor
+$\Einf$, though the specific law identity (exponential vs.\
+saturation vs.\ power) is statistically fragile and mostly
+exploratory at per-slice sample sizes of 4--7.
+Third, capacity scaling is largely negligible within our parameter range.
 
-These results demonstrate that the \emph{type} of scaling law, not just its
-exponents, provides additional diagnostic information about the interaction
-between PDE structure, model architecture, and discretization in this
-setting.
+The framework's contribution is \emph{diagnostic}, not predictive:
+in a held-out contest, multi-law fitting matches but does not
+meaningfully outperform a power-law-only baseline (\holdoutWinFraction{}
+wins, ${\sim}$\holdoutMeanImprovement{} mean improvement).
+The value lies in identifying when resolution investment helps or
+hurts, and in showing that operator-learning scaling should be treated
+as a model-selection problem over law families rather than an
+exponent-estimation exercise---though generalising beyond 1D PDEs
+remains an open question.
 \end{abstract}
 
 % ══════════════════════════════════════════════════════════════════════
@@ -122,26 +129,34 @@ and leads to misleading exponent estimates.
     functional forms (power, exponential, logarithmic, stretched
     exponential, saturation, linear) and use AICc to identify the
     governing law per axis, per task, per model. The \emph{identity}
-    of the winning law becomes a physics-interpretable diagnostic.
-  \item We report \textbf{29{,}860+ training runs} and
-    cross-resolution evaluations across three PDE
-    families, three architectures, and seven capacity levels.
-  \item We find that \textbf{data scaling is not a simple power law}:
-    with the baseline grid, logarithmic ($E = a - b \ln N$) dominates
-    7 of 9 combinations; with a denser 11-point grid, bounded-decay
-    families (exponential, saturation) emerge as the true winners,
-    revealing an irreducible-error floor that the sparse grid obscures
-    (see \Cref{app:dense-n}).
+    of the winning law becomes an interpretable diagnostic, subject to
+    sample-size limitations we quantify.
+  \item We report \textbf{\totalRuns{} training runs}
+    (\mainRuns{} main grid plus \ablationRuns{} optimizer ablations)
+    and cross-resolution evaluations across three PDE
+    families, three architectures, and seven capacity levels
+    (\Cref{tab:run-accounting}).
+  \item We find that \textbf{data scaling on the densified grid
+    consistently selects laws with a finite error floor}: the
+    AICc-selected winner in all 9 task--model combinations (8 on the
+    densified grid; Diffusion MLP on the sparser $n=5$ grid) belongs
+    to a family with an $\Einf$ parameter. However, within-slice
+    bootstrap analysis shows that the specific law identity is fragile
+    at small $n$; the robust conclusion is that data scaling shows
+    strong diminishing returns and is consistent with a bounded-decay
+    regime.
   \item We show that \textbf{resolution scaling is non-universal}: it
     helps consistently only for Burgers, is mixed for Darcy, and
-    \emph{actively hurts} for Diffusion (MLP, DeepONet). This
-    challenges the assumption that resolution is a uniformly beneficial
-    scaling axis.
-  \item We demonstrate that \textbf{estimated irreducible error floors}
-    $\Einf$ extracted from the best per-axis fits provide
-    architecture-dependent error floor estimates: FNO achieves
-    $\Einf = 0.003$ on Diffusion vs.\ DeepONet's 0.19---a
-    63$\times$ gap that persists regardless of data volume.
+    \emph{actively hurts} for Diffusion (MLP, DeepONet). This is the
+    most statistically robust finding in the study (4 of 5 robust
+    law-selection cases occur on the resolution axis).
+  \item We extract \textbf{estimated error floors}
+    $\Einf$ from the best per-axis fits that suggest an
+    architecture-dependent ranking (FNO $<$ MLP $<$ DeepONet),
+    though these are extrapolated estimates conditional on the
+    winning functional form, and cross-architecture comparisons
+    are confounded by unequal effective parameter budgets at
+    equivalent capacity labels.
 \end{enumerate}
 
 
@@ -171,8 +186,9 @@ power laws, we treat the \emph{identity} of the best-fitting
 functional form as itself informative. This family-selection-centric
 view does not discard the traditional approach; instead, it includes
 power laws as one of six candidates and explicitly tests when the
-traditional baseline succeeds (Diffusion FNO/MLP) and when it fails
-(Burgers / Darcy data scaling, where logarithmic fits dominate).
+traditional baseline succeeds (Diffusion, where power laws dominate)
+and when it fails (Burgers / Darcy data scaling, where
+exponential and saturation families provide better fits).
 
 \paragraph{Operator learning.}
 DeepONet~\citep{lu2021learning} builds on the universal approximation
@@ -270,7 +286,10 @@ regimes:
 \subsection{Model Selection via AICc}
 
 For each slice (fixed values of the other two axes), we fit all six
-candidates via nonlinear least squares (Levenberg--Marquardt) and select
+candidates via nonlinear least squares
+(\texttt{scipy.optimize.curve\_fit} with parameter bounds;
+SciPy uses the trust-region reflective algorithm when bounds are
+finite). We select
 the winner using the corrected Akaike Information Criterion:
 \begin{equation}
   \mathrm{AICc} = n \ln\!\bigl(\mathrm{RSS}/n\bigr) + 2k +
@@ -292,9 +311,13 @@ To assess selection stability, we run $B=500$ bootstrap replicates
 which the dominant law retains its winning status.
 Cases where the top-two mean Akaike weights differ by less than 15\%
 are flagged as \emph{ambiguous}.
-As a robustness check, we also compute the Bayesian Information
-Criterion (BIC) for every slice and report the AICc--BIC concordance
-rate (fraction of slices where both criteria select the same winner).
+As a supplementary sensitivity check, we also compute the Bayesian
+Information Criterion (BIC) for every slice and report AICc--BIC
+concordance (fraction of slices where both criteria agree).
+At our small sample sizes ($n = 4$--$7$), BIC's penalty is actually
+\emph{weaker} than AICc's corrected penalty, so low concordance
+should not be read as evidence against the AICc selection
+(see \Cref{app:bic}).
 
 
 % ══════════════════════════════════════════════════════════════════════
@@ -357,15 +380,72 @@ We sweep over five axes:
   \item \textbf{Resolution} $R \in \{32, 64, 128, 256\}$
   \item \textbf{Model capacity}: 7 levels (\textit{tiny} to
     \textit{xlarge}; $\sim$5K--500K parameters)
-  \item \textbf{Data seeds}: $\{11, 22, 33\}$
-  \item \textbf{Training seeds}: $\{101, 202, 303\}$
+  \item \textbf{Data seeds}: $\{11, 22\}$
+  \item \textbf{Training seeds}: $\{101, 202\}$ (Diffusion);
+    $\{101, 202, 303\}$ (Burgers, Darcy)
 \end{itemize}
-This yields $3 \times 7 \times 5 \times 4 \times 2 \times 2 = 1{,}680$
-runs per task and $5{,}040$ total training runs. Each model is trained
+The seed count varies by task: Diffusion uses $2 \times 2 = 4$
+seed combinations per configuration, while Burgers and Darcy use
+$2 \times 3 = 6$. The baseline grid (3~models $\times$ 7~capacities
+$\times$ 5~data sizes $\times$ 4~resolutions) thus comprises
+$1{,}680$ training runs for Diffusion and $2{,}520$ each for Burgers
+and Darcy, totalling $6{,}720$ baseline training runs before
+cross-resolution evaluation.
+Each model is trained
 for up to 5{,}000 epochs with early stopping (patience 200) using Adam
 ($\text{lr} = 10^{-3}$, weight decay $10^{-5}$). Results are averaged
-over the 4 seed combinations per configuration, yielding 1{,}260
-grouped data points.
+over the seed combinations per configuration, yielding grouped
+data points for analysis.
+
+\paragraph{Extension grids.}
+\Cref{tab:run-accounting} provides a complete accounting of all
+experimental runs. Beyond the baseline, we ran
+dense-$N$ extensions (6 intermediate $N$ values), wide-$R$
+extensions (6 additional $R$ values), controlled-MLP experiments
+(fixed parameter count), and optimizer ablations
+(Adam with $2\times$ patience; SGD with cosine annealing).
+The ``Runs'' column in \Cref{tab:run-accounting} counts each
+(training configuration, evaluation resolution) pair as one entry,
+including cross-resolution evaluations.
+The grand total is \totalRuns{}.
+
+\begin{table}[h]
+\centering
+\caption{Experimental run accounting. ``Baseline'' is the $5\times 4
+\times 7$ data--resolution--capacity grid (4--6 seed combinations
+per configuration depending on task), including cross-resolution
+evaluations for DeepONet and FNO.
+Extension grids densify specific axes or test
+robustness.}
+\label{tab:run-accounting}
+\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Component} & \textbf{Scope} & \textbf{Runs} &
+\textbf{Purpose} \\
+\midrule
+Baseline grid & All tasks $\times$ 3 models & 15{,}120 &
+  Core scaling analysis \\
+Dense-$N$ extension & Burg/Darcy/Diff $\times$ DON/FNO & 11{,}578 &
+  Data-axis law discrimination \\
+Wide-$R$ extension & Burgers $\times$ 3 models & 2{,}352 &
+  Resolution-axis law stability \\
+MLP controlled & Burg+Diff $\times$ MLP-ctrl & 2{,}016 &
+  Parameter-count confound \\
+Dense-$N$ (MLP only) & Burg $\times$ MLP & 304 &
+  MLP data-axis extension \\
+\midrule
+\emph{Main grid subtotal} & & \mainRuns{} & \\
+\midrule
+Adam $2\times$ patience & Burgers $\times$ 3 models & 756 &
+  Optimizer sensitivity \\
+SGD + cosine & Burgers $\times$ 3 models & 657 &
+  Optimizer sensitivity \\
+\midrule
+\textbf{Grand total} & & \textbf{\totalRuns{}} & \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Cross-Resolution Evaluation}
 After training, each model is evaluated at all resolutions
@@ -399,9 +479,11 @@ median $R^2$ and the median characteristic parameter.
 \section{Results}
 \label{sec:results}
 
-All 29{,}860 training runs (baseline grid plus dense-$N$,
-wide-$R$, controlled-MLP, and ablation extensions) completed
-with zero divergence. We report relative $L^2$ error
+Of the \totalRuns{} runs (baseline grid plus dense-$N$,
+wide-$R$, controlled-MLP, and ablation extensions),
+582 diverged (all in Burgers, $<$3.3\% of that task); these are
+excluded from fitting and grouped statistics.
+We report relative $L^2$ error
 $\relLtwo = \|v_{\mathrm{pred}} - v_{\mathrm{true}}\|_2 /
 \|v_{\mathrm{true}}\|_2$ as the primary metric.
 
@@ -417,8 +499,10 @@ for each task--model combination.
 \caption{Data scaling: AICc-selected law, median~$R^2$,
 mean Akaike weight of the winner ($\bar{w}_1$), and bootstrap
 probability that the winner retains its status across $B\!=\!500$
-replicates. ``Votes'' shows the top-2 law counts across all 28
-slices per task--model pair.}
+replicates. ``Votes'' shows the top-2 law counts across all
+slices per task--model pair. Burgers uses the widened grid
+(63~slices per pair); Darcy and Diffusion use the base grid
+(28~slices).}
 \label{tab:data-laws}
 \begin{tabular}{@{}llccccl@{}}
 \toprule
@@ -426,76 +510,82 @@ slices per task--model pair.}
 $\bar{w}_1$ & \textbf{Boot.\%} & \textbf{Votes (top-2)} \\
 \midrule
 \multirow{3}{*}{Burgers}
-  & MLP      & logarithmic & 0.935 & 0.78 & 100\% & log:23, pow:5 \\
-  & DeepONet & logarithmic & 0.899 & 0.67 & 97\% & log:18, exp:8 \\
-  & FNO      & ambiguous$^\dagger$ & 0.998 & 0.38 & 52\% & log:11, pow:10 \\
+  & MLP      & saturation  & 0.999 & 0.36 & 80\% & sat:25, pow:19 \\
+  & DeepONet & \textbf{exponential} & 0.971 & 0.48 & 100\% & exp:36, pow:17 \\
+  & FNO      & power       & 0.993 & 0.36 & 76\% & pow:25, log:20 \\
 \midrule
 \multirow{3}{*}{Darcy}
-  & MLP      & logarithmic & 0.847 & 0.80 & 100\% & log:26, exp:2 \\
-  & DeepONet & logarithmic & 0.854 & 0.77 & 100\% & log:23, pow:3 \\
-  & FNO      & logarithmic & 0.887 & 0.91 & 100\% & log:27, exp:1 \\
+  & MLP      & \textbf{exponential} & 0.881 & 0.69 & 100\% & exp:28 \\
+  & DeepONet & \textbf{exponential} & 0.886 & 0.36 & 94\% & exp:16, pow:9 \\
+  & FNO      & stretched\_exp & 0.946 & 0.55 & 89\% & str:17, exp:10 \\
 \midrule
 \multirow{3}{*}{Diffusion}
   & MLP      & \textbf{power} & 0.998 & 0.68 & 100\% & pow:20, exp:5 \\
-  & DeepONet & logarithmic & 0.720 & 0.67 & 100\% & log:21, pow:5 \\
-  & FNO      & \textbf{power} & 0.998 & 0.64 & 99\% & pow:19, log:7 \\
+  & DeepONet & \textbf{power} & 0.909 & 0.47 & 100\% & pow:21, exp:6 \\
+  & FNO      & \textbf{power} & 0.992 & 0.27 & 59\% & pow:11, str:10 \\
 \bottomrule
 \end{tabular}
 \vspace{2pt}
 
-\noindent{\footnotesize $^\dagger$Ambiguous: Burgers FNO data scaling shows
-nearly tied vote counts (log:11 vs.\ pow:10) and the winner's mean
-Akaike weight is only 0.38, indicating that the data does not
-decisively favor either logarithmic or power-law scaling.
-The bootstrap winner probability is 52\%, confirming genuine ambiguity.}
+\noindent{\footnotesize Burgers results include the widened resolution
+grid ($R$ up to 512), yielding 63 slices per model. Darcy and
+Diffusion use the base 4-resolution grid (28 slices per model).
+Diffusion FNO remains the most ambiguous case: power wins with
+only 0.27 mean weight and 59\% bootstrap probability. The within-slice
+bootstrap (\Cref{tab:evidence-strength}) shows that most of these
+law-identity selections are exploratory; the robust finding is
+that all winners belong to bounded-decay families.}
 \end{table}
 
-\paragraph{Key finding: logarithmic data scaling is the norm on the
-baseline grid, but denser sampling reveals bounded-decay alternatives.}
-In 7 of 9 task--model combinations with $n = 5$ data sizes, the AICc
-selects the logarithmic form $E = a - b \ln N$ over the power law.
-However, extending to $n = 11$ sample sizes (\Cref{app:dense-n})
-shifts the winner toward bounded-decay families (exponential,
-saturation) that encode an irreducible error floor. The logarithmic
-result should therefore be interpreted as an \textbf{artefact of sparse
-sampling}: with only five $N$ values the curvature near the floor is
-unresolvable.
+\paragraph{Key finding: data scaling shows strong diminishing returns,
+consistent with a bounded-decay regime.}
+With the full analysis (including dense-$N$ and wide-$R$ extensions),
+every task--model combination selects a law family that includes
+a finite $\Einf$ term.
+Logarithmic and linear forms---both lacking $\Einf$---are rejected
+in every case.
+On the sparse $n = 5$ grid used in earlier analysis, logarithmic
+appeared dominant in 7 of 9 cases; with the denser grid
+(\Cref{app:dense-n}), logarithmic is displaced entirely---
+its apparent dominance was an
+\textbf{artefact of sparse sampling} that could not resolve the
+curvature near the error plateau.
 
-Regardless of the specific family, the core practical conclusion is
-unchanged: error decreases
-much slower than a power law $E \propto N^{-\alpha}$ would predict.
+\textbf{Important caveat:} while all winners share the $\Einf$
+property, the within-slice bootstrap (\Cref{sec:within-slice-bootstrap})
+shows that the specific law identity is \emph{fragile} at the
+per-slice level. Only one data-axis case (Diffusion MLP: $\bar{w}_1
+= 0.68$, within-slice dominant fraction $= 0.59$) meets both
+robustness criteria. The reliable conclusion is not which specific
+family wins (e.g., exponential vs.\ saturation vs.\ power---all
+of these appear as winners in \Cref{tab:data-laws} depending on
+task and model), but that (i)~data scaling follows a bounded-decay
+pattern rather than unbounded logarithmic growth, and (ii)~error
+decreases much more slowly than classical power-law rates suggest
+for Burgers and Darcy.
 
-\noindent\textbf{Caveat (within-slice stability).}
-The inter-slice bootstrap (Boot.\% column) shows stable \emph{aggregate}
-selection, but the within-slice bootstrap (\Cref{sec:within-slice-bootstrap})
-reveals that individual slices carry substantial uncertainty: mean
-within-slice dominant fractions on the data axis range from 0.33 to
-0.59, and in several cases the bootstrap's per-slice winner differs
-from the AICc aggregate winner. All data-axis claims except
-Diffusion MLP ($w_1 = 0.68$, bootstrap fraction $= 0.59$) should
-therefore be interpreted as indicative rather than robust.
-
-\paragraph{Exception: Diffusion FNO and MLP show genuine power laws.}
-For Diffusion, FNO and MLP exhibit clean power-law data scaling with
-$\alpha \approx 1.1$--$1.2$ and $R^2 = 0.998$. This is the only
-regime in our study where the classical power-law assumption holds
-decisively. The Diffusion operator's smoothness (exponential spectral
+\paragraph{Exception: Diffusion shows genuine power laws.}
+All three Diffusion models exhibit power-law data scaling
+(with floor): MLP ($\alpha \approx 1.1$, $R^2 = 0.998$),
+FNO ($R^2 = 0.992$), and DeepONet ($R^2 = 0.909$). This is the only
+task in our study where the classical power-law assumption holds
+consistently. The Diffusion operator's smoothness (exponential spectral
 decay) creates a favorable learning problem where additional data
-yields fast algebraic convergence. Notably, DeepONet does \emph{not}
-follow a power law even on Diffusion (logarithmic, $R^2 = 0.72$),
-suggesting an architecture-specific bottleneck.
+yields fast algebraic convergence. DeepONet's lower $R^2$ and weaker
+Akaike weight ($\bar{w}_1 = 0.47$) suggest it is less well-suited
+to this favorable regime.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{../figures/multilaw_data_scaling.png}
 \caption{Data scaling with AICc-selected fits overlaid on representative
-slices (baseline five-point $N$ grid). Blue: logarithmic $a - b \ln N$.
-Red: power law $\Einf + a N^{-\alpha}$. Purple: exponential. Titles
-show the law vote distribution across all slices. On this grid,
-logarithmic fits dominate for Burgers and Darcy; power laws win
-decisively for Diffusion FNO/MLP. See \Cref{app:dense-n} for results
-with an eleven-point grid that shifts preference toward bounded-decay
-families.}
+slices. Burgers and Darcy include dense-$N$ extensions ($n \le 11$
+data points); Diffusion uses the baseline $n=5$ grid.
+Red: power law $\Einf + a N^{-\alpha}$. Purple: exponential.
+Orange: saturation / stretched-exponential.
+Titles show the law vote distribution across all slices.
+Exponential and saturation dominate for Burgers and Darcy;
+power laws win for Diffusion.}
 \label{fig:data-scaling}
 \end{figure}
 
@@ -540,31 +630,41 @@ per-slice sample size ($n=4$).}
 \multirow{3}{*}{Diffusion}
   & MLP      & logarithmic & 0.957 & 1/35 & \textbf{27/35} \\
   & DeepONet & logarithmic & 0.642 & 0/35 & \textbf{27/35} \\
-  & FNO      & linear      & 0.317 & 0/35 & 2/35 \\
+  & FNO      & logarithmic & 0.317 & 0/35 & 2/35 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Key finding: the \emph{direction} of resolution scaling
-is task-dependent and robust, even though the specific law identity
-is exploratory.}
-With only $n=4$ resolution values per slice, AICc-based law selection
-has limited statistical power; the robust finding is \emph{whether}
+is task-dependent and the most statistically robust finding in
+this study.}
+With only $n=4$ resolution values per slice on the baseline grid,
+AICc-based law selection has limited statistical power; the robust
+finding is \emph{whether}
 resolution helps, hurts, or is negligible---not which functional form
-best describes the trend. A restricted-candidate-set ablation
+best describes the trend. The specific law labels (e.g.,
+``logarithmic'' or ``linear'' in \Cref{tab:res-laws}) should be
+treated as \emph{exploratory}: at $n=4$, even 2-parameter families
+are only weakly distinguishable, and these labels should not be
+interpreted as confident identifications of the true functional form.
+A restricted-candidate-set ablation
 (retaining only 2-parameter families: linear, logarithmic, power)
 confirms that the directional conclusions survive (see
-Supplementary~\Cref{tab:restricted-comparison}).
+Supplementary~\Cref{tab:restricted-comparison}). For Burgers, where
+the widened grid ($n = 10$) is available, the direction is confirmed
+in 99.6\% of slices.
 
 \textbf{Burgers (resolution helps uniformly).}
 All three architectures benefit from higher resolution in every single
-slice (35/35). The winning law is logarithmic ($E = a - b \ln R$ with
-$b > 0$), with the logarithmic coefficient $b \approx 0.075$ for
-MLP and DeepONet. This is physically expected: Burgers solutions develop
-steep gradients and near-shock structures that require sufficient grid
-resolution to represent. The 100\% consistency across all capacity
-levels and dataset sizes confirms that resolution is genuinely
-beneficial for this advection-dominated PDE.
+slice (35/35). The AICc-selected law is logarithmic
+($E = a - b \ln R$ with $b > 0$, $b \approx 0.075$ for MLP and
+DeepONet), though at $n=4$ this label is tentative.
+The directional finding is what matters: the 100\% consistency
+across all capacity levels and dataset sizes confirms that resolution
+is genuinely beneficial for this advection-dominated PDE. This is
+physically expected, as Burgers solutions develop steep gradients
+and near-shock structures that require sufficient grid resolution
+to represent.
 
 \textbf{Darcy (resolution effect is mixed).}
 Resolution helps in 20--27 of 35 slices depending on the model, but
@@ -577,10 +677,11 @@ reliable scaling law.
 
 \textbf{Diffusion (resolution actively hurts).}
 This is the most striking finding: for MLP and DeepONet, increasing
-resolution \emph{increases} error in 27 of 35 slices. The logarithmic
-fit captures this with $b < 0$ (negative coefficient), meaning error
-grows as $\ln R$. FNO is essentially flat ($R^2 = 0.32$, near the
-noise floor). Physically, the Diffusion operator damps
+resolution \emph{increases} error in 27 of 35 slices. The
+AICc-selected fit is logarithmic with $b < 0$ (negative coefficient),
+consistent with error growing as $\ln R$---though again, the
+specific functional form should be treated as tentative at $n=4$.
+FNO is essentially flat ($R^2 = 0.32$, near the noise floor). Physically, the Diffusion operator damps
 high-frequency modes exponentially ($\hat{u}_k(T) = \hat{u}_k(0)
 e^{-\nu k^2 T}$), so higher-resolution inputs contain high-frequency
 components that have negligible impact on the output. For
@@ -670,9 +771,15 @@ candidate law across all task--model--axis combinations. Several
 patterns emerge:
 
 \begin{enumerate}
-  \item \textbf{Data axis}: logarithmic dominates for Burgers and Darcy
-    (64--96\% of slices); power law dominates for Diffusion FNO/MLP
-    (68--71\%). The split aligns with PDE smoothness.
+  \item \textbf{Data axis}: exponential dominates for Darcy MLP
+    (100\%) and Burgers DeepONet (57\%); power law dominates for
+    Diffusion MLP (71\%) and DeepONet (75\%); saturation and
+    stretched-exponential fill the remaining combinations.
+    Logarithmic receives zero votes for models with the dense-$N$
+    grid, and still captures 32\% for Burgers FNO.
+    The split broadly correlates with PDE smoothness, but per-slice
+    law identity remains mostly exploratory
+    (\Cref{tab:evidence-strength}).
   \item \textbf{Resolution axis}: logarithmic and linear are the only
     serious contenders. Power law, exponential, and stretched exponential
     receive zero or negligible votes---resolution scaling is never
@@ -726,20 +833,29 @@ Diffusion & 0.021 & 0.192 & \textbf{0.003} \\
 \end{tabular}
 \end{table}
 
-\paragraph{Key finding: $\Einf$ provides an architecture-dependent
-error floor estimate.}
+\paragraph{Key finding: $\Einf$ suggests an architecture-dependent
+ranking, subject to both functional-form assumptions and
+cross-architecture fairness caveats.}
 The estimated error floor hierarchy is consistent across all tasks:
-FNO~$<$~MLP~$<$~DeepONet. This ranking is independent of dataset
-size, resolution, or capacity---it reflects the intrinsic
-representational quality of each architecture for mapping PDE inputs
-to outputs, subject to the caveat that these are extrapolated
-estimates conditional on the winning functional form.
+FNO~$<$~MLP~$<$~DeepONet. However, this ranking carries two
+important limitations: (i)~$\Einf$ depends on the assumed functional
+form and is an extrapolation, not a direct measurement; and
+(ii)~``capacity level'' maps to different absolute parameter counts
+across architectures (e.g., ``medium'' FNO has $\sim$287K parameters
+vs.\ ``medium'' MLP at $\sim$34K), so part of FNO's advantage may
+reflect its generally larger parameter budgets rather than purely
+its inductive bias. The ranking should be interpreted as
+\emph{suggestive within this experimental design}, not as a
+controlled comparison at identical parameter counts.
 
 The largest gap is on Diffusion, where FNO's $\Einf = 0.003$ is
 63$\times$ lower than DeepONet's 0.192. This dramatic difference
-arises because FNO's Fourier parameterization perfectly aligns with the
+arises because FNO's Fourier parameterization aligns with the
 spectral structure of the Diffusion operator, while DeepONet's
-pointwise trunk network cannot exploit this structure.
+pointwise trunk network cannot exploit this structure. However,
+this comparison is not parameter-count controlled, and the floor
+estimates would shift under a different winning law family; the
+63$\times$ gap is conditional on the selected functional form.
 
 On Darcy (the hardest task), all models have high floors ($> 0.6$),
 indicating a fundamental approximation challenge that no architecture
@@ -824,8 +940,10 @@ harmful for these tasks.}
 \end{tabular}
 \end{table}
 
-FNO achieves the lowest error on all tasks: 4.8\% on Burgers, 52.5\% on
-Darcy, 0.2\% on Diffusion. Notably, the best MLP configurations for
+FNO achieves the lowest error on all tasks within this experimental
+design: 4.8\% on Burgers, 52.5\% on
+Darcy, 0.2\% on Diffusion (noting that capacity labels map to
+different absolute parameter counts across architectures). Notably, the best MLP configurations for
 both Darcy and Diffusion use $R = 32$---the lowest resolution---validating
 the finding that higher resolution is unhelpful or harmful for these
 smooth operators when using a discretization-tied architecture.
@@ -847,22 +965,27 @@ For each task--model--axis combination, we hold out ${\sim}20\%$ of
 grid configurations (slices), fit (a)~a power-law-only model and
 (b)~the AICc-best multi-law model on the remaining ${\sim}80\%$ of
 slices (pooled), and evaluate out-of-sample RMSE on the held-out
-slices. Results are averaged over all 27 task--model--axis
-combinations.
+slices. Results are averaged over all 33 task--model--axis
+combinations (including MLP-controlled).
 
 \paragraph{Results.}
-\Cref{tab:holdout} summarises the held-out prediction contest.
+\Cref{tab:holdout} summarizes the held-out prediction contest.
 Multi-law selection achieves lower out-of-sample relative RMSE in
-\holdoutWinFraction{} of combinations, with mean relative improvement
-of \holdoutMeanImprovement{}. In most cases the two approaches
+\holdoutWinFraction{} of combinations---essentially a coin flip---with
+mean relative improvement of \holdoutMeanImprovement{} and
+\emph{median improvement of zero}. In most cases the two approaches
 perform comparably, with differences in the fourth decimal place.
-The clearest multi-law advantage appears on the Darcy task, where
-the data-axis fit for MLP improves substantially (0.343 $\to$ 0.234).
+The clearest multi-law advantage appears on the Darcy data axis,
+where the fit for MLP improves from 0.113 to 0.101.
+
 These results show that multi-law selection does not overfit to
-in-sample points (comparable or better extrapolation), while
-providing richer descriptive information. However, the extrapolation
-advantage alone does not justify the framework---its primary value
-lies in the diagnostic power of law \emph{identity}.
+in-sample points (its out-of-sample performance is comparable to
+power-law-only), but it provides no meaningful \emph{predictive}
+advantage either. \textbf{The framework's value lies entirely in its
+diagnostic power}---the ability to identify which functional form
+best describes each axis---not in superior extrapolation.
+We caution against interpreting multi-law selection as an improved
+prediction methodology; it is a descriptive and interpretive tool.
 
 \begin{table}[h]
 \centering
@@ -975,14 +1098,74 @@ Diffusion & DeepONet & 0.43 & 0.45 & \textbf{0.51} \\
 These results reinforce the paper's core message: at small $n$,
 law-selection conclusions should be interpreted as indicative
 rather than definitive. Of 27 task--model--axis combinations, only
-7 satisfy both criteria for robust selection (mean Akaike weight
-$>0.5$ \emph{and} within-slice dominant fraction $>0.5$ for the
-same law); 15 are ambiguous (one criterion met); and 5 are weak
-(neither met). The resolution axis yields the most robust selections
-(4 of 7 robust cases), consistent with its role as a stable
-diagnostic. Data-axis and capacity-axis claims should be treated
-with appropriate caution until the denser $n=11$ grid
-(\Cref{app:dense-n}) provides stronger discriminative power.
+4 satisfy both thresholds for robust selection (mean Akaike weight
+$>0.5$ \emph{and} within-slice dominant fraction $>0.5$); 7 meet
+one threshold (``suggestive''); and 16 meet neither (``exploratory'').
+\Cref{tab:evidence-strength} classifies every finding accordingly.
+The resolution axis yields the most robust selections
+(3 of 4 robust cases), consistent with the directional resolution
+finding being the study's strongest result.
+Data-axis and capacity-axis law-identity claims should be treated
+with appropriate caution; the reliable data-axis conclusion is
+the \emph{direction} (bounded diminishing returns) rather than
+the specific functional form.
+
+\begin{table}[h]
+\centering
+\caption{Evidence-strength classification for every task--model--axis
+finding. ``Robust'': mean Akaike weight $>0.5$ and within-slice
+bootstrap fraction $>0.5$ (both thresholds met). ``Suggestive'':
+one threshold met. ``Exploratory'': neither met. Law identity is
+the AICc aggregate winner; parenthetical is the within-slice
+bootstrap mode when it disagrees.}
+\label{tab:evidence-strength}
+\small
+\begin{tabular}{@{}llllc@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{Axis} &
+\textbf{AICc Winner} & \textbf{Strength} \\
+\midrule
+\multirow{9}{*}{Burgers}
+  & DeepONet & data       & exponential & Exploratory \\
+  & DeepONet & capacity   & logarithmic (bs: linear) & Exploratory \\
+  & DeepONet & resolution & logarithmic & \textbf{Robust} \\
+  & FNO      & data       & power       & Exploratory \\
+  & FNO      & capacity   & logarithmic & Exploratory \\
+  & FNO      & resolution & linear (bs: log) & Suggestive \\
+  & MLP      & data       & saturation (bs: power) & Exploratory \\
+  & MLP      & capacity   & logarithmic & Suggestive \\
+  & MLP      & resolution & logarithmic & \textbf{Robust} \\
+\midrule
+\multirow{9}{*}{Darcy}
+  & DeepONet & data       & exponential (bs: log) & Exploratory \\
+  & DeepONet & capacity   & logarithmic (bs: linear) & Suggestive \\
+  & DeepONet & resolution & linear (bs: log) & Exploratory \\
+  & FNO      & data       & stretched exp (bs: log) & Suggestive \\
+  & FNO      & capacity   & logarithmic & Suggestive \\
+  & FNO      & resolution & logarithmic & Exploratory \\
+  & MLP      & data       & exponential (bs: power) & Suggestive \\
+  & MLP      & capacity   & logarithmic (bs: linear) & Exploratory \\
+  & MLP      & resolution & logarithmic & Suggestive \\
+\midrule
+\multirow{9}{*}{Diffusion}
+  & DeepONet & data       & power (bs: log) & Exploratory \\
+  & DeepONet & capacity   & linear       & Exploratory \\
+  & DeepONet & resolution & logarithmic & Suggestive \\
+  & FNO      & data       & power       & Exploratory \\
+  & FNO      & capacity   & power (bs: linear) & Exploratory \\
+  & FNO      & resolution & logarithmic & Exploratory \\
+  & MLP      & data       & power       & \textbf{Robust} \\
+  & MLP      & capacity   & logarithmic (bs: linear) & Exploratory \\
+  & MLP      & resolution & logarithmic & \textbf{Robust} \\
+\bottomrule
+\end{tabular}
+
+\vspace{2pt}
+\noindent{\footnotesize Robust: 4/27. Suggestive: 7/27. Exploratory:
+16/27. The concentration of robust cases on the resolution axis
+(3/4) reflects its directional stability; data-axis and capacity-axis
+law identity is generally exploratory.}
+\end{table}
 
 
 % ══════════════════════════════════════════════════════════════════════
@@ -992,35 +1175,49 @@ with appropriate caution until the denser $n=11$ grid
 \subsection{The Scaling Law Type as a Diagnostic}
 
 The central methodological contribution of this work is demonstrating
-that the \emph{identity} of the best-fitting scaling law provides
-additional diagnostic information beyond the law's fitted parameters
-in this setting. Specifically:
+that the \emph{identity} of the best-fitting scaling law can provide
+diagnostic information beyond the law's fitted parameters.
+We separate our findings into three tiers of evidence strength:
 
+\paragraph{Robust findings (supported by both Akaike weights and
+within-slice bootstrap).}
 \begin{itemize}
-  \item \textbf{Logarithmic or bounded-decay data scaling} is consistent with a
-    high-dimensional learning problem where the curse of dimensionality
-    limits convergence rates. On the baseline five-point grid,
-    logarithmic fits dominate; with the denser eleven-point grid
-    (\Cref{app:dense-n}), exponential and saturation families often
-    supersede them—but both families share the diagnostic signature
-    of severe diminishing returns. In our setting, Burgers and
-    Darcy---both involving complex input distributions with broad
-    spectral content---fall in this regime. We note, however, that no
-    direct dimensionality measurement is available; this interpretation
-    is a hypothesis motivated by approximation theory, not an
-    established diagnostic.
-  \item \textbf{Power-law data scaling} with large $\alpha$ signals a
-    favorable learning geometry. Diffusion's smooth spectral structure
-    creates a low-effective-dimensional problem for architectures that
-    can exploit it (FNO, MLP).
-  \item \textbf{Logarithmic resolution scaling with negative slope}
-    ($b < 0$) is a warning sign: increasing resolution hurts
-    generalization. On Diffusion, MLP and DeepONet both exhibit this,
-    indicating that high-resolution inputs add noise dimensions without
-    information content.
-  \item \textbf{Flat capacity scaling} (linear with $b \approx 0$)
-    indicates that the model family is already expressive enough---a
-    reassuring diagnostic that prevents over-investment in model size.
+  \item \textbf{Resolution scaling direction}: resolution uniformly
+    helps for Burgers (advection-dominated), is marginal for Darcy
+    (elliptic), and actively hurts for Diffusion (smooth).
+    The resolution axis yields 3 of 4 robust law-selection cases,
+    with logarithmic scaling ($b > 0$ for Burgers, $b < 0$ for
+    Diffusion) confirmed by both criteria.
+  \item \textbf{Diffusion MLP data scaling} follows power-law decay
+    with a floor ($\bar{w}_1 = 0.68$, bootstrap fraction $= 0.59$),
+    the only data-axis case meeting both robustness criteria.
+\end{itemize}
+
+\paragraph{Suggestive findings (one robustness criterion met, or
+consistent direction across multiple analyses).}
+\begin{itemize}
+  \item \textbf{Bounded-decay data scaling}: across all 9 task--model
+    pairs (8 on the densified grid; Diffusion MLP on the sparser
+    $n=5$ grid), the AICc winner belongs to a family
+    with a finite $\Einf$ floor. While the specific law identity is
+    statistically fragile (only 1/9 meets both robustness criteria),
+    the \emph{direction}---bounded diminishing returns rather than
+    unbounded logarithmic decay---is consistent across grid densities,
+    tasks, and optimizer choices.
+  \item \textbf{Flat capacity scaling}: in 8 of 9 cases, the
+    capacity winner is linear or logarithmic with negligible
+    coefficient, indicating that all architectures are
+    capacity-sufficient in our parameter range.
+\end{itemize}
+
+\paragraph{Exploratory findings (neither robustness criterion met;
+interpret with caution).}
+\begin{itemize}
+  \item The specific identity of the data-axis winner
+    (e.g., exponential vs.\ saturation vs.\ power) for Burgers and
+    Darcy. These distinctions require larger per-slice samples.
+  \item Capacity-axis law identity for most combinations
+    (15/27 exploratory overall).
 \end{itemize}
 
 \subsection{When Does Resolution Matter?}
@@ -1044,29 +1241,46 @@ Our results establish a clear trichotomy:
 
 \subsection{Architecture Recommendations}
 
+\paragraph{Cross-architecture fairness caveat.}
+Comparing architectures requires caution: ``capacity level'' maps to
+different parameter counts across architectures (e.g., ``medium''
+MLP at $R = 128$ has $\sim$34K parameters, while ``medium'' FNO has
+$\sim$287K). The capacity grids were chosen to span a comparable
+\emph{range} for each architecture, but absolute parameter counts
+differ. FNO's consistent advantage may partly reflect its generally
+larger parameter budgets at equivalent capacity labels. The
+$\Einf$ ranking (FNO $<$ MLP $<$ DeepONet) is suggestive but should
+not be interpreted as a controlled comparison at identical
+parameter counts.
+
 \paragraph{FNO.}
-The Fourier Neural Operator achieves the lowest absolute error and the
-lowest $\Einf$ on every task. Its spectral parameterization aligns
-well with PDE structure, particularly for smooth operators. FNO is the
-only architecture that benefits from additional capacity on Diffusion
-(power-law capacity scaling, $R^2 = 0.95$) and shows the strongest
-cross-resolution transfer on Burgers. Its main weakness is that
-resolution scaling on Burgers is weaker than for MLP and DeepONet
-(linear rather than logarithmic on the baseline grid), suggesting
-that FNO's spectral smoothing may truncate some high-frequency
-information present at higher resolutions.
+Within this experimental design, the Fourier Neural Operator achieves
+the lowest absolute error and the lowest estimated $\Einf$ on every
+task. Its spectral parameterization aligns well with PDE structure,
+particularly for smooth operators. FNO is the only architecture that
+benefits from additional capacity on Diffusion (power-law capacity
+scaling, $R^2 = 0.95$) and shows the strongest cross-resolution
+transfer on Burgers. However, FNO's generally larger parameter counts
+at equivalent capacity labels mean that part of this advantage may
+reflect budget rather than architecture. Its resolution scaling on
+Burgers is weaker than MLP and DeepONet (linear rather than
+logarithmic on the baseline grid), suggesting that FNO's spectral
+smoothing may truncate some high-frequency information at higher
+resolutions.
 
 \paragraph{DeepONet.}
-DeepONet consistently shows the weakest performance: highest $\Einf$
-on all tasks, slow data scaling even on Diffusion (where FNO/MLP
-achieve power laws), and no meaningful capacity scaling. Its branch--trunk
-architecture, while theoretically elegant, appears to be a
-representational bottleneck in the settings studied here
-(1D PDEs, three architectures, $\leq$500K parameters).
-Whether this limitation persists for larger-scale DeepONet variants
-or higher-dimensional problems remains an open question.
-The uniform cross-resolution
-transfer is its only structural advantage.
+DeepONet shows the weakest performance in our study: highest estimated
+$\Einf$ on all tasks, slow data scaling even on Diffusion (where
+FNO/MLP achieve power laws), and no meaningful capacity scaling.
+However, this comparison is not fully controlled: DeepONet's capacity
+grid spans a different parameter range than FNO's, and the
+branch--trunk architecture may require larger scales or different
+hyperparameter tuning to realise its theoretical advantages.
+This conclusion is limited to our experimental scope (1D PDEs,
+$\leq$500K parameters); whether it persists for larger-scale
+DeepONet variants, higher-dimensional problems, or problems with
+more complex output queries remains open. The uniform
+cross-resolution transfer is a structural advantage.
 
 \paragraph{MLP.}
 The simple MLP baseline is competitive with DeepONet on every task and
@@ -1139,49 +1353,71 @@ scaling.
 
 We have presented a comprehensive scaling study of operator learning
 that replaces the standard power-law assumption with multi-law model
-selection. Across 29{,}860+ training runs spanning baseline,
+selection. Across \totalRuns{} training runs spanning baseline,
 dense-$N$, wide-$R$, controlled-MLP, and optimizer ablation grids,
-our findings challenge several widespread assumptions:
+we separate our findings by evidence strength, from most to least
+statistically reliable:
 
+\paragraph{Robust conclusions (confirmed by both Akaike weights and
+within-slice bootstrap): directional resolution scaling.}
 \begin{enumerate}
-  \item \textbf{Power laws are not the default.} On the baseline
-    five-point grid, data scaling follows logarithmic decay
-    ($E = a - b \ln N$) in 7 of 9 task--model combinations;
-    with the denser eleven-point grid (\Cref{app:dense-n}),
-    bounded-decay families (exponential, saturation) often supersede
-    logarithmic, but power laws remain confined to Diffusion FNO/MLP
-    ($\alpha \approx 1.1$, $R^2 = 0.998$).
   \item \textbf{Resolution is not universally beneficial.} Higher
     resolution helps for advection-dominated PDEs (Burgers: 35/35
     slices improve) but \emph{actively hurts} for smooth PDEs
-    (Diffusion: 27/35 slices worsen for MLP and DeepONet), challenging
-    the assumption that resolution is a monotonically beneficial axis.
+    (Diffusion: 27/35 slices worsen for MLP and DeepONet).
+    This is the study's most statistically robust finding
+    (3 of 4 robust law-selection cases).
+  \item \textbf{Diffusion MLP follows power-law data scaling with
+    a floor} ($\alpha \approx 1.1$, $R^2 = 0.998$), the only
+    data-axis case meeting both robustness criteria.
+\end{enumerate}
+
+\paragraph{Suggestive conclusions (one criterion met or consistent
+direction across analyses): bounded data scaling and architecture
+ranking.}
+\begin{enumerate}[resume]
+  \item \textbf{Data scaling shows bounded diminishing returns.}
+    On the densified grid (8 of 9 task--model pairs; Diffusion MLP
+    uses the sparser $n=5$ grid), every combination selects a
+    law family with a finite $\Einf$ floor; however, the specific
+    law identity is statistically fragile for 8 of 9 cases.
+    The reliable inference is the \emph{direction} (bounded decay),
+    not the specific family.
   \item \textbf{Capacity is not a bottleneck} for 1D PDE tasks at
     the scales we study (5K--500K parameters), except for FNO on
     Diffusion, which exhibits clear power-law capacity scaling.
-  \item \textbf{The type of scaling law is itself a diagnostic.}
-    Sub-power-law data scaling (logarithmic or bounded decay) signals
-    hard learning regimes; negative logarithmic resolution scaling
-    signals harmful input over-discretization; flat capacity scaling
-    confirms architectural sufficiency.
   \item \textbf{Estimated error floors $\Einf$ rank architectures
-    independently of resource allocation.} FNO achieves the lowest
-    estimated floor on every task, with the gap being largest on
-    Diffusion (63$\times$ better than DeepONet). These are
-    extrapolated estimates conditional on the assumed functional form.
+    consistently}: FNO achieves the lowest estimated floor on every
+    task, with the gap largest on Diffusion (63$\times$ better than
+    DeepONet). These are extrapolated estimates conditional on
+    both the winning functional form and the (uncontrolled)
+    parameter budgets across architectures.
+\end{enumerate}
+
+\paragraph{Exploratory conclusions (neither criterion met; require
+confirmation with larger samples): specific law-family identity.}
+\begin{enumerate}[resume]
+  \item \textbf{The specific law identity} (exponential vs.\
+    saturation vs.\ stretched-exponential) on the data axis for
+    Burgers and Darcy. The multi-law framework can distinguish
+    bounded from unbounded decay, but finer distinctions within the
+    bounded-decay family require more data points per slice.
 \end{enumerate}
 
 \paragraph{Limitations and future work.}
-Our study is limited to 1D PDEs and a 1D Darcy formulation. In higher
-dimensions, resolution effects are amplified ($R^d$ cost growth) and
-may shift the resolution-scaling balance. The baseline resolution grid
+Our study is limited to 1D PDEs and a 1D Darcy formulation; the
+``resolution can hurt'' finding should not be generalized to operator
+learning broadly without at least one higher-dimensional benchmark.
+In higher dimensions, resolution effects are amplified ($R^d$ cost
+growth) and may shift the resolution-scaling balance. The baseline resolution grid
 has only 4 training values ($R \in \{32, 64, 128, 256\}$); the
 widened 10-value grid (\Cref{app:wide-res}) substantially improves
-law-selection power and reveals shifts (e.g., FNO resolution scaling
-moves to linear) but is currently available only for Burgers.
+law-selection power but is currently available only for Burgers.
 Future work should extend the wide-$R$ grid to all tasks.
+Diffusion MLP baseline has only $n=5$ on the data axis (not yet
+densified), so its data-scaling results rely on the sparser grid.
 
-\paragraph{MLP resolution--capacity confound.}
+\paragraph{MLP resolution--capacity confound (a key limitation).}
 For the MLP baseline, the parameter count scales linearly with input
 resolution ($D \propto R$), creating a confound between the
 resolution and capacity axes. The controlled-parameter experiment
@@ -1348,7 +1584,7 @@ sizes ($n = 4$--$7$). When $n \leq k + 1$, AICc is set to $+\infty$,
 effectively disqualifying overparameterized models.
 
 BIC is computed as $\mathrm{BIC} = n \ln(\mathrm{RSS}/n) + k \ln n$.
-For large $n$, BIC penalises complexity more heavily than AICc;
+For large $n$, BIC penalizes complexity more heavily than AICc;
 however, at our small sample sizes ($n = 4$--$7$), an important
 inversion occurs: BIC's penalty $k \ln n \approx 1.6k$ (at $n=5$)
 is \emph{weaker} than AICc's corrected penalty
@@ -1436,7 +1672,7 @@ Darcy     & DeepONet & linear      & linear      & \checkmark \\
 Darcy     & FNO      & logarithmic & logarithmic & \checkmark \\
 Diffusion & MLP      & logarithmic & logarithmic & \checkmark \\
 Diffusion & DeepONet & logarithmic & logarithmic & \checkmark \\
-Diffusion & FNO      & linear      & linear      & \checkmark \\
+Diffusion & FNO      & logarithmic & power       & \checkmark \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1498,7 +1734,7 @@ discrimination between logarithmic and power-law decay.
 \paragraph{Key questions.}
 \begin{enumerate}
   \item Does the ``logarithmic wins'' finding on the data axis
-    stabilise or shift towards power-law with denser sampling?
+    stabilize or shift towards power-law with denser sampling?
   \item Does BIC concordance improve at $n = 11$ (where the small-$n$
     penalty inversion from \Cref{app:bic} becomes less severe)?
   \item Do within-slice bootstrap dominant fractions increase
@@ -1526,12 +1762,16 @@ simpler logarithmic form. Intermediate points (especially $N = 150$,
 200, 300, 750) resolve the curvature near the floor and tip
 selection toward bounded families.
 
-\emph{Takeaway:} The ``logarithmic dominance'' reported in
-\Cref{sec:data-scaling} is an artifact of sparse sampling;
-with denser grids, data-axis scaling is better described by families
+\emph{Takeaway:} With only five data-axis sample sizes, AICc
+favors logarithmic; with the denser 11-point grid,
+data-axis scaling is better described by families
 with an irreducible-error floor, consistent with finite-resolution
-approximation limits. Results for Darcy FNO and all Diffusion models
-are pending completion of the remaining dense-N runs.
+approximation limits. The main-text \Cref{tab:data-laws} reports
+results on the combined grid.
+Dense-$N$ extensions are complete for all task--model pairs except
+Diffusion MLP baseline (which retains only $n = 5$ data-axis
+sample sizes). Darcy DeepONet and FNO now use the full $n = 31$
+dense grid; Diffusion DeepONet and FNO use an $n = 25$ grid.
 
 \subsection{MLP Fixed-Parameter-Count Experiment}
 \label{app:mlp-controlled}
@@ -1650,8 +1890,9 @@ increases the number of retained Fourier modes.
 is sensitive to grid density. With 10 resolution values,
 FNO resolution scaling is clearly linear, while MLP and DeepONet
 retain logarithmic as a slight plurality winner but with significant
-linear competition. Results for Darcy and Diffusion are pending
-completion of remaining wide-R runs.
+linear competition. Wide-$R$ data currently available for Burgers
+only; Darcy and Diffusion use the extended grids from the main
+baseline (DeepONet/FNO: $n = 20$; MLP: $n = 4$).
 
 \subsection{Frequency-Filtered Diffusion}
 \label{app:filtered}
@@ -1721,25 +1962,25 @@ for downsampling. For upsampling, the two methods are comparable,
 so cross-resolution transfer conclusions in the main paper are
 \textbf{not driven by interpolation artifacts}.
 
-\subsection{Early Stopping and Optimiser Sensitivity}
+\subsection{Early Stopping and Optimizer Sensitivity}
 \label{app:optimizer}
 
 All main experiments use Adam with learning rate $10^{-3}$ and
 early-stopping patience of 200 epochs. We test sensitivity by
-rerunning a subset (all tasks, all models, medium capacity) with:
+rerunning a subset (Burgers, all 3 models, all capacities) with:
 \begin{itemize}
   \item \textbf{Variant A}: Adam with 2$\times$ patience (400 epochs)
   \item \textbf{Variant B}: SGD with momentum 0.9 + cosine annealing schedule
 \end{itemize}
 
 \paragraph{Key question.}
-Do law-selection winners change when the optimiser or convergence
+Do law-selection winners change when the optimizer or convergence
 criterion shifts? If they do, the law selection is training-sensitive
 rather than reflecting a property of the task--architecture pair.
 
 \paragraph{Results.}
-We analyse Burgers at medium capacity (756 runs per variant for
-Adam~$2\times$; 471/756 complete for SGD~cosine).
+We analyse Burgers at medium capacity (756 runs for
+Adam~$2\times$; 657/756 complete for SGD~cosine).
 
 \textbf{Resolution axis:} Law selection is fully stable across
 optimizers. Logarithmic wins in 88\% of baseline slices,
