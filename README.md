@@ -103,4 +103,3 @@ configs/          # per-task YAML configs
 ## License
 
 MIT
-# scaling-operator-learning
