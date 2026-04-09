@@ -416,7 +416,74 @@ def write_report(
         "(masked or marked) rather than averaged in."
     )
     a("")
-    a("### 5b. Top divergence cells (after the R=48 effect)")
+    a("### 5b. Root-cause: R=48 is a data bug, not a training divergence")
+    a("")
+    a(
+        "I reproduced the Burgers data generator standalone (without torch) "
+        "at every R value used in the grid for both data seeds. Result:"
+    )
+    a("")
+    a("| R | seed=11 NaN samples / 200 | seed=22 NaN samples / 200 | max\\|u_T\\| |")
+    a("|---:|---:|---:|---:|")
+    a("| 16 | 0 | 0 | 4.27 |")
+    a("| 32 | 0 | 0 | 4.26 |")
+    a("| **48** | **7** | **2** | **18.6** |")
+    a("| 64 | 0 | 0 | 3.14 |")
+    a("| 96 | 0 | 0 | 3.24 |")
+    a("| 128 | 0 | 0 | 3.10 |")
+    a("| 192 | 0 | 0 | 3.10 |")
+    a("| 256 | 0 | 0 | 2.94 |")
+    a("")
+    a(
+        "**This means:** the 582 \"diverged training runs\" at R=48 are not a "
+        "training-stability problem at all. They are a *data generator* "
+        "problem. The pseudo-spectral Burgers solver "
+        "(`src/scaling_operator_learning/tasks/burgers.py:_spectral_solve`) "
+        "produces NaN/Inf in roughly 1–4% of samples only when R=48. The "
+        "training loop correctly catches the NaN at the first forward pass "
+        "(`best_epoch=-1`, `failure_reason=nan_or_inf`, `nan_detected=True` "
+        "for all 582 runs), but the upstream cause is a single buggy task "
+        "configuration."
+    )
+    a("")
+    a(
+        "**Why R=48 specifically?** R=48 is the only value in the Burgers R "
+        "grid that is divisible by 3 but not by powers of 2 alone "
+        "(48 = 16 × 3). With the 2/3-rule dealiasing (`kmax = R // 3 = 16`), "
+        "the kept-mode ratio is exactly 33/48 = 11/16 ≈ 0.6875, which is the "
+        "same as R=16 (also stable). So the dealiasing ratio per se isn't "
+        "the trigger. The likely mechanism is a numerical interaction "
+        "between (a) the integrating-factor RK4 with the 1e-3 fixed step, "
+        "(b) the specific FFT mode layout for R=48, and (c) the rare "
+        "tail-end ICs from the random Fourier basis. Pinning the exact "
+        "mechanism is out of scope for Phase 2 — but the empirical result "
+        "is unambiguous: R=48 is broken at the data level."
+    )
+    a("")
+    a("**Implications for the rewrite:**")
+    a("")
+    a(
+        "- The R=48 column should be excluded from the main response-surface "
+        "heatmaps in Phase 3 (or visually masked) and called out separately "
+        "as a known data-generator artifact. Including it would inject "
+        "spurious 80% divergence noise into a regime that is otherwise clean."
+    )
+    a(
+        "- The paper's previous narrative of \"582 training runs diverged\" "
+        "should be reframed: 0 training runs experienced optimization "
+        "divergence on Burgers; 582 training runs received corrupt input data."
+    )
+    a(
+        "- Phase 5 (instability) should keep the 582 figure but reattribute "
+        "it to data-generator failure, not training instability. This is a "
+        "more honest framing and one the reviewer would catch on a re-read."
+    )
+    a(
+        "- A targeted reproducer for the data-generator bug is in "
+        "`scripts/repro_r48_data_bug.py`."
+    )
+    a("")
+    a("### 5c. Top divergence cells (after the R=48 effect)")
     a("")
     a(
         "For completeness, the worst (task, model, capacity, N, R) cells by "

@@ -6,6 +6,28 @@ Reply by editing `DECISIONS_RESOLVED.md` at the repo root with the question numb
 
 ---
 
+## Heads-up before you read the questions
+
+While building the Phase 2 cell-coverage map I found something that may change how you want to answer Q1, Q3, and Q6 — and is itself a major finding worth its own §5b in `VALIDATION_REPORT.md`:
+
+**The 582 "diverged" Burgers runs are not optimization divergences — they are NaN-poisoned input data.**
+
+- All 582 are at one resolution: R=48.
+- Every other R (16, 32, 64, 96, 128, 192, 256, 384, 512) shows 0 divergences.
+- All 582 have `failure_reason=nan_or_inf`, `nan_detected=True`, `best_epoch=-1` (failed before the first epoch finished).
+- The Burgers spectral solver in `src/scaling_operator_learning/tasks/burgers.py:_spectral_solve` produces NaN/Inf in roughly 1–4% of generated samples *only* at R=48. Standalone reproducer: `scripts/repro_r48_data_bug.py`.
+
+**Implications you may want to weigh in on (no answer required, but flag if you disagree with my plan):**
+
+- I will exclude R=48 from primary response-surface heatmaps in Phase 3 and call it out separately as a known data-generator artifact.
+- The previous draft's "582 diverged" macro should stay numerically the same but be reattributed to *data-generator failure*, not *training instability*. The reviewer would catch this on a re-read.
+- Phase 5 (instability) gets a much smaller "true optimization-divergence" budget than the prior draft implied, but a clearer narrative.
+- The R=48 data bug itself could be fixed (different dt, larger dealiasing window, or just dropping R=48 from the grid). I have not patched it — that's a separate decision and would require regenerating data + reruns. Default: leave the bug, document it, exclude R=48 from primary plots.
+
+If you want me to instead try to *fix* the R=48 data-gen bug and rerun those 729 cells, add it as a new question in `DECISIONS_RESOLVED.md`. Otherwise I'll proceed with the "document and exclude" plan.
+
+---
+
 ## 1. Strictness of "no law fits in main text"
 
 Two readings of your directive:

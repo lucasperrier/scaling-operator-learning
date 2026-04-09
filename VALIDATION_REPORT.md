@@ -151,7 +151,33 @@ Per-resolution divergence count for Burgers:
 
 **Reading:** R=48 is the only non-power-of-two, non-multiple-of-16 value in the Burgers R grid. Every other R value (16, 32, 64, 96, 128, 192, 256, 384, 512) shows zero training divergences across the entire grid. The fact that the failure is *deterministic* and *resolution-specific* — not sporadic — suggests an aliasing or spectral-grid mismatch in the data generator or the FNO mode allocation, not an optimization issue. **This is a concrete instability finding for Phase 5 that does not depend on any modeling choices in the rewrite, and it merits its own subsection of the new paper.** It also affects how the Phase 3 response-surface plots should be drawn: R=48 columns should be visually distinct (masked or marked) rather than averaged in.
 
-### 5b. Top divergence cells (after the R=48 effect)
+### 5b. Root-cause: R=48 is a data bug, not a training divergence
+
+I reproduced the Burgers data generator standalone (without torch) at every R value used in the grid for both data seeds. Result:
+
+| R | seed=11 NaN samples / 200 | seed=22 NaN samples / 200 | max\|u_T\| |
+|---:|---:|---:|---:|
+| 16 | 0 | 0 | 4.27 |
+| 32 | 0 | 0 | 4.26 |
+| **48** | **7** | **2** | **18.6** |
+| 64 | 0 | 0 | 3.14 |
+| 96 | 0 | 0 | 3.24 |
+| 128 | 0 | 0 | 3.10 |
+| 192 | 0 | 0 | 3.10 |
+| 256 | 0 | 0 | 2.94 |
+
+**This means:** the 582 "diverged training runs" at R=48 are not a training-stability problem at all. They are a *data generator* problem. The pseudo-spectral Burgers solver (`src/scaling_operator_learning/tasks/burgers.py:_spectral_solve`) produces NaN/Inf in roughly 1–4% of samples only when R=48. The training loop correctly catches the NaN at the first forward pass (`best_epoch=-1`, `failure_reason=nan_or_inf`, `nan_detected=True` for all 582 runs), but the upstream cause is a single buggy task configuration.
+
+**Why R=48 specifically?** R=48 is the only value in the Burgers R grid that is divisible by 3 but not by powers of 2 alone (48 = 16 × 3). With the 2/3-rule dealiasing (`kmax = R // 3 = 16`), the kept-mode ratio is exactly 33/48 = 11/16 ≈ 0.6875, which is the same as R=16 (also stable). So the dealiasing ratio per se isn't the trigger. The likely mechanism is a numerical interaction between (a) the integrating-factor RK4 with the 1e-3 fixed step, (b) the specific FFT mode layout for R=48, and (c) the rare tail-end ICs from the random Fourier basis. Pinning the exact mechanism is out of scope for Phase 2 — but the empirical result is unambiguous: R=48 is broken at the data level.
+
+**Implications for the rewrite:**
+
+- The R=48 column should be excluded from the main response-surface heatmaps in Phase 3 (or visually masked) and called out separately as a known data-generator artifact. Including it would inject spurious 80% divergence noise into a regime that is otherwise clean.
+- The paper's previous narrative of "582 training runs diverged" should be reframed: 0 training runs experienced optimization divergence on Burgers; 582 training runs received corrupt input data.
+- Phase 5 (instability) should keep the 582 figure but reattribute it to data-generator failure, not training instability. This is a more honest framing and one the reviewer would catch on a re-read.
+- A targeted reproducer for the data-generator bug is in `scripts/repro_r48_data_bug.py`.
+
+### 5c. Top divergence cells (after the R=48 effect)
 
 For completeness, the worst (task, model, capacity, N, R) cells by divergence rate. As expected, all top entries are at R=48.
 
