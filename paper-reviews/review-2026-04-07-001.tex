@@ -1,0 +1,140 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.7em}
+\emergencystretch=2em
+
+\begin{document}
+
+\section*{Review of ``Beyond Power Laws: What Scaling Reveals About Operator Learning''}
+
+\paragraph{Overall assessment.}
+This is an interesting and potentially publishable empirical study, but the current draft has several manuscript-internal consistency problems that should be fixed before circulation. I read the full manuscript, explicitly checked the displayed equations, appendix formulas, symbol definitions, sign conventions, branch-convention issues, dimensional consistency, and implementation-facing expressions, and ran the bundled proofing scan. I did not find a concrete inverse-trig, sign-convention, or notation-drift failure in the displayed math; in particular, the descriptors attached to $R$, $R_{\mathrm{train}}$, $R_{\mathrm{eval}}$, and $E_\infty$ are mostly stable. The main problems are instead experimental accounting, cross-table consistency, and one methods description that is technically incompatible with the stated SciPy call.
+
+\section*{Most Important Technical Findings}
+
+\begin{enumerate}
+\item \textbf{Experimental accounting is internally inconsistent in several places.}
+
+\emph{Location.} Section ``Scaling Grid'', Table ``Experimental run accounting'', Section ``Cross-Resolution Evaluation'', Section ``Held-Out Prediction Contest'', and Appendix ``Early Stopping and Optimiser Sensitivity''.
+
+\emph{Problem.} The paper gives mutually incompatible counts for seeds, baseline runs, evaluation metrics, held-out combinations, and ablation runs. The most direct examples are:
+\begin{enumerate}
+  \item The seed bullet list gives data seeds $\{11,22,33\}$ and training seeds $\{101,202,303\}$, but the next sentence uses
+  \[
+    3 \times 7 \times 5 \times 4 \times 2 \times 2 = 1{,}680
+  \]
+  and then says the results are averaged over 4 seed combinations.
+  \item The same section says the baseline has 5{,}040 runs total, whereas Table ``Experimental run accounting'' reports 15{,}120 baseline runs.
+  \item ``Cross-Resolution Evaluation'' reports 13{,}440 additional evaluation metrics, but this matches neither of the manuscript's own counting schemes: 5{,}040 training runs with four non-training evaluation resolutions would imply 20{,}160 per-run metrics, while 1{,}260 grouped configurations would imply 5{,}040 grouped metrics.
+  \item The held-out section says results are averaged over 27 task--model--axis combinations, but Table ``Held-out prediction contest'' contains 33 combinations and the summary macro states ``15/33 (45\%).''
+  \item The main Results section says all 32{,}783 training runs completed with zero divergence, but the optimizer appendix later says ``471/756 complete for SGD~cosine'', while the run-accounting table reports 657 SGD runs.
+\end{enumerate}
+
+\emph{Audit from data.}
+I verified these against the actual data files (\texttt{runs/runs\_aggregate.csv}, ablation directories, \texttt{results/*.json}):
+\begin{itemize}
+  \item \textbf{Seeds}: Only 2 data seeds (\{11,22\}) and 2--3 training seeds were actually used---not 3 of each. Seed combinations are 4 (Diffusion: $2\times2$) or 6 (Burgers/Darcy: $2\times3$).
+  \item \textbf{Divergence}: 582 runs diverged (all in Burgers), contradicting ``zero divergence.''
+  \item \textbf{Held-out}: Data file has 33 entries (including MLP-ctrl), not 27.
+  \item \textbf{SGD ablation}: 657 runs completed successfully, not 471.
+  \item \textbf{Table totals}: The line items 15{,}120 + 11{,}578 + 2{,}352 + 2{,}016 + 304 = 31{,}370 sums correctly to \texttt{\textbackslash mainRuns}, but the table conflates training runs and cross-resolution evaluations without noting this; the text's ``5{,}040 total training runs'' uses a different accounting.
+\end{itemize}
+
+\emph{Applied fixes.}
+\begin{itemize}
+  \item Corrected seed lists to \{11,22\} and \{101,202\}/\{101,202,303\} with per-task seed counts.
+  \item Replaced the single misleading formula with per-task baseline counts (1{,}680 for Diffusion, 2{,}520 for Burgers/Darcy, 6{,}720 total baseline training) and removed the ``averaged over 4'' claim.
+  \item Added table caption note clarifying that ``Runs'' includes cross-resolution evaluations.
+  \item Changed ``zero divergence'' to ``582 diverged (all in Burgers, $<$3.3\%).''
+  \item Changed ``27 task--model--axis'' to ``33'' in the held-out section.
+  \item Changed ``471/756'' to ``657/756'' for SGD cosine in the optimizer appendix.
+  \item Changed ``all tasks, all models, medium capacity'' to ``Burgers, all 3 models'' in the optimizer appendix (matching the actual ablation scope).
+  \item Changed abstract ``training runs'' to ``experimental configurations (training runs plus cross-resolution evaluations).''
+\end{itemize}
+
+\item \textbf{The fitting-method description is technically inconsistent with SciPy's bounded solver behavior.}
+
+\emph{Location.} ``Model Selection via AICc'' and Appendix ``Multi-Law Fitting Details''.
+
+\emph{Problem.} The manuscript says the candidate laws were fit by nonlinear least squares ``(Levenberg--Marquardt)'' and later via \texttt{scipy.optimize.curve\_fit} ``(Levenberg--Marquardt)'' while also stating that parameter \emph{bounds} were enforced. In SciPy, bounded \texttt{curve\_fit} calls do not use Levenberg--Marquardt; bounded fits switch to a trust-region method.
+
+\emph{Audit from code.} Confirmed: \texttt{src/scaling\_operator\_learning/analysis/\_\_init\_\_.py} and \texttt{scripts/run\_multilaw\_analysis.py} always pass finite bounds to \texttt{curve\_fit}. SciPy uses ``trf'' (trust-region reflective) in this case.
+
+\emph{Applied fix.} Replaced ``(Levenberg--Marquardt)'' with an accurate description: ``\texttt{scipy.optimize.curve\_fit} with parameter bounds; SciPy uses the trust-region reflective algorithm when bounds are finite.''
+
+\item \textbf{The resolution-axis winner for Diffusion--FNO is reported inconsistently across tables, and the robustness tally does not match the visible table body.}
+
+\emph{Location.} Table ``Resolution scaling'', Table ``Evidence-strength classification'', and Table ``Full (6-law) vs.\ restricted (3-law) winner on the resolution axis''.
+
+\emph{Problem.} Diffusion--FNO resolution is reported as \emph{linear} in the main resolution table and again as \emph{linear} in the restricted-candidate comparison, but it appears as \emph{logarithmic} in the evidence-strength table. In the same evidence-strength table, the footer says ``Robust: 5/27'', but the body visibly contains only four \textbf{Robust} entries.
+
+\emph{Audit from data.} \texttt{results/multilaw\_fits.json} confirms: Diffusion FNO resolution dominant law = \textbf{logarithmic} (median $R^2 = 0.441$, BIC concordance = 1.00). The restricted fit (\texttt{multilaw\_fits\_restricted.json}) selects \textbf{power}, not linear. The evidence-strength table body contains exactly 4 Robust entries: Burgers DeepONet resolution, Burgers MLP resolution, Diffusion MLP data, Diffusion MLP resolution.
+
+\emph{Applied fixes.}
+\begin{itemize}
+  \item Changed Diffusion FNO from ``linear'' to ``logarithmic'' in the main resolution table.
+  \item Changed ``linear/linear'' to ``logarithmic/power'' in the restricted comparison table.
+  \item Changed footer ``Robust: 5/27'' to ``4/27'' and ``Exploratory: 15/27'' to ``16/27.''
+  \item Changed ``4 of 5 robust cases'' to ``3 of 4'' in three locations.
+\end{itemize}
+
+\item \textbf{The repeated claim that all 9 task--model combinations are on the densified data grid is overstated.}
+
+\emph{Location.} Abstract, Introduction contribution 3, Discussion, and Conclusion versus the ``Limitations and future work'' paragraph.
+
+\emph{Problem.} Several high-level claims say that ``all 9 task--model combinations on the densified grid'' select a family with a finite error floor. But the Conclusion later states explicitly that ``Diffusion MLP baseline has only $n=5$ on the data axis (not yet densified).'' Those two statements cannot both be true as written.
+
+\emph{Applied fix.} Changed ``all 9 task--model combinations on the densified grid'' to ``all 9 task--model combinations (8 on the densified grid; Diffusion MLP on the sparser $n=5$ grid)'' in the abstract, introduction, discussion, and conclusion (4 locations).
+
+\item \textbf{BIC is introduced as a robustness check in the main methods, but the appendix later explains that it is not functioning as one in the usual sense.}
+
+\emph{Location.} ``Model Selection via AICc'' versus Appendix ``Multi-Law Fitting Details'' and ``Robustness: BIC Concordance''.
+
+\emph{Problem.} The main methods section presents AICc--BIC concordance as a robustness check. The appendix later explains that at $n=4$--$7$, BIC's penalty is actually weaker than AICc's corrected penalty and that BIC concordance is reported ``for transparency, not as a robustness check in the usual sense.''
+
+\emph{Applied fix.} Reframed BIC in the main methods from ``robustness check'' to ``supplementary sensitivity check,'' and added the small-$n$ caveat to the main text with a forward reference to the appendix.
+\end{enumerate}
+
+\section*{Meaningful Editorial Findings}
+
+\begin{enumerate}
+\item \textbf{Local wording bug in a dense methodological paragraph.}
+
+\emph{Location.} Appendix ``Densified Data Axis''.
+
+\emph{Problem.} The phrase ``Diffusion DeepONet and FNO use a $n = 25$ grid'' should be ``an $n = 25$ grid'' or ``a 25-point grid.''
+
+\emph{Applied fix.} Changed to ``an $n = 25$ grid.''
+
+\item \textbf{The draft mixes American and British spelling/style.}
+
+\emph{Location.} Distributed throughout the manuscript.
+
+\emph{Problem.} Inconsistent pairs: ``summarizes'' vs.\ ``summarises'', ``optimizer'' vs.\ ``optimiser'', ``penalizes'' vs.\ ``penalises'', ``favors'' vs.\ ``favours'', and ``stabilize'' vs.\ ``stabilise''.
+
+\emph{Applied fix.} Normalized all 7 British spellings to American English (summarises$\to$summarizes, generalised$\to$generalized, penalises$\to$penalizes, stabilise$\to$stabilize, favours$\to$favors, Optimiser$\to$Optimizer $\times$2).
+\end{enumerate}
+
+\section*{Proofing Sweep}
+
+I ran the bundled \texttt{scripts/proofing\_scan.py} scan and spot-checked the returned hits. Most semicolon-capitalization hits were false positives caused by acronyms or task names beginning the second clause. The two high-confidence proofing fixes worth carrying into the draft are the local article error (``a $n = 25$ grid'') and the global US/UK spelling inconsistency noted above. Both have been applied.
+
+\section*{Highest-Priority Fixes Applied}
+
+\begin{enumerate}
+\item Corrected every reported seed list, formula, divergence claim, and held-out count against the actual data files. Added table annotation distinguishing training runs from cross-resolution evaluations.
+\item Corrected the optimizer description so the stated fitting procedure matches the actual bounded SciPy call (trust-region reflective, not Levenberg--Marquardt).
+\item Synchronized the resolution-axis winner for Diffusion--FNO across all three tables (logarithmic in full fits, power in restricted fits) and corrected the robust-case tally from 5/27 to 4/27.
+\item Narrowed the dense-$N$ headline claim so it notes that 8 of 9 combinations are on the densified grid (Diffusion MLP uses the sparser grid).
+\end{enumerate}
+
+\section*{Items Needing External Verification}
+
+I did not need external literature to establish any of the issues above; they are manuscript-internal. If you want an outward-facing fact-check next, the broad Related Work phrase claiming that FNO achieves ``state-of-the-art accuracy on several PDE benchmarks'' is the clearest candidate for literature verification rather than internal audit.
+
+\end{document}

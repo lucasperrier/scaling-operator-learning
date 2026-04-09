@@ -42,3 +42,11 @@ paper/*.fls
 paper/*.log
 paper/*.out
 paper/*.synctex.gz
+paper-reviews/*.aux
+paper-reviews/*.bbl
+paper-reviews/*.blg
+paper-reviews/*.fdb_latexmk
+paper-reviews/*.fls
+paper-reviews/*.log
+paper-reviews/*.out
+paper-reviews/*.synctex.gz
