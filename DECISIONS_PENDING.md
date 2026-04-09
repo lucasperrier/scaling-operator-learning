@@ -1,5 +1,22 @@
 # Decisions pending — Paper 2 reframe
 
+> **Resolved 2026-04-09.** Lucas accepted all defaults and chose option (a) for R=48 (document and exclude, do not attempt to fix the data-generator bug). Locked-in answers, in PROTOCOL_V2.md §0:
+>
+> 1. (b) descriptive shorthand allowed in main text
+> 2. sensitivity-based regime taxonomy with empirically calibrated thresholds
+> 3. (a) Darcy as secondary case
+> 4. (b) keep Diffusion sparse, document caveat
+> 5. (b) work with 2 data seeds, do not rerun for parity
+> 6. yes — reposition optimizer ablations as instability evidence
+> 7. (a) deliverables at repo root
+> 8. (b) new file `paper/main_v4.tex`, swap with main.tex when ready
+> R=48: (a) document and exclude from primary heatmaps; do not patch the data generator
+>
+> Phase 1 (PROTOCOL_V2.md) is now unblocked. Leaving this file in place as a historical record of the gating questions; future open questions will go in a new section of PROTOCOL_V2.md or in a new pending file.
+
+---
+
+
 These are blocking questions for Phase 1 (PROTOCOL_V2.md). They come from AUDIT.md §11. Phrased so you can answer on a phone — short replies (a/b/c, "default", or one sentence) are fine. I'll keep working on Phase 2 (cell-coverage enumeration) until I have answers.
 
 Reply by editing `DECISIONS_RESOLVED.md` at the repo root with the question number and your answer. I'll pull every ~10 minutes.
