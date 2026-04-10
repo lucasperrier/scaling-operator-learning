@@ -319,16 +319,16 @@ Stated explicitly to head off scope creep and to make the rewrite reviewable:
 
 | Phase | Deliverable | Status | Owner |
 |---|---|---|---|
-| 0 | `AUDIT.md` | done (committed e6adb3b → 6cb873b) | Claude |
-| 1 | `PROTOCOL_V2.md` (this document) | **done with this commit** | Claude |
-| 2 | `VALIDATION_REPORT.md` + `results/cell_coverage_*.csv` | done (committed 2b370ac, 5e83152, b8716b1) | Claude |
-| 2b | `scripts/aggregate_cells.py` + `results/cell_stats_*.csv` | not started (extends Phase 2 with the §4 statistics) | Claude |
-| 3 | `RESULTS_RESPONSE_SURFACES.md` + `figures/response_surface_*` + threshold calibration | not started | Claude |
-| 4 | `RESULTS_TRANSFER.md` + `scripts/build_transfer_matrices.py` + `figures/transfer_matrix_*` | not started | Claude |
-| 5 | `RESULTS_CONVERGENCE.md` + `figures/divergence_heatmap_*`, `figures/seed_cv_heatmap_*` | not started | Claude |
-| 6 | `APPENDIX_LAW_FITS.md` (optional) | not started | Claude |
-| 7 | `paper/main_v4.tex` rewrite | not started | Claude |
-| 8 | `CLAIM_AUDIT.md` (per-claim evidence audit) | not started | Claude |
+| 0 | `AUDIT.md` | **done** (e6adb3b → 6cb873b) | Claude |
+| 1 | `PROTOCOL_V2.md` (this document) | **done** (64ceb7a) | Claude |
+| 2 | `VALIDATION_REPORT.md` + `results/cell_coverage_*.csv` | **done** (2b370ac, 5e83152, b8716b1) | Claude |
+| 2b | `scripts/aggregate_cells.py` + `results/cell_stats_*.csv` | **done** (13821ef) | Claude |
+| 3 | `RESULTS_RESPONSE_SURFACES.md` + threshold calibration + regime labels | **done** (733e696, b90354a) | Claude |
+| 4 | `RESULTS_TRANSFER.md` + `scripts/build_transfer_matrices.py` | **done** (bb741e1) | Claude |
+| 5 | `RESULTS_CONVERGENCE.md` + `scripts/plot_convergence.py` | **done** (a4a69ca) | Claude |
+| 6 | `APPENDIX_LAW_FITS.md` (optional) | **skipped** — content folded into `paper/main_v4.tex` Appendix C | Claude |
+| 7 | `paper/main_v4.tex` rewrite | **done** (3e76499) | Claude |
+| 8 | `CLAIM_AUDIT.md` (per-claim evidence audit) | **done** (0bf6868) | Claude |
 
 Phase ordering: 2b → 3 → 4 → 5 → 6 → 7 → 8. Phases 3, 4, 5 can run in parallel after 2b is done because they read the same `results/cell_stats_*.csv` files but produce independent figures and result documents.
 
