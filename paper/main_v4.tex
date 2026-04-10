@@ -1,0 +1,1010 @@
+% !TEX program = pdflatex
+\documentclass[11pt]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{enumitem}
+\usepackage[numbers]{natbib}
+\bibliographystyle{plainnat}
+
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,citecolor=green!50!black,urlcolor=blue!70!black}
+
+% ── Macros ────────────────────────────────────────────────────────────
+\newcommand{\Einf}{E_\infty}
+\newcommand{\Reval}{R_{\mathrm{eval}}}
+\newcommand{\Rtrain}{R_{\mathrm{train}}}
+\newcommand{\relLtwo}{\varepsilon_{\mathrm{rel}}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+% ── Auto-populated result macros (Phase 0–5 values) ──────────────────
+\newcommand{\totalRuns}{32{,}783}
+\newcommand{\mainRuns}{31{,}370}
+\newcommand{\ablationRuns}{1{,}413}
+\newcommand{\diagCells}{3{,}374}
+\newcommand{\crossResCells}{3{,}360}
+\newcommand{\crossResRows}{13{,}440}
+\newcommand{\nDiagTraining}{17{,}930}
+% Regime distribution (Phase 3a)
+\newcommand{\regMixed}{1{,}641}
+\newcommand{\regDataLim}{398}
+\newcommand{\regResSens}{387}
+\newcommand{\regCapLim}{186}
+\newcommand{\regUnstable}{81}
+\newcommand{\regSaturated}{51}
+\newcommand{\regAmbiguous}{483}
+\newcommand{\regDataBug}{147}
+% Calibrated thresholds
+\newcommand{\threshLow}{0.037}
+\newcommand{\threshHigh}{0.227}
+% Transfer (Phase 4)
+\newcommand{\fnoWorstDeg}{6.56}
+\newcommand{\fnoMeanDeg}{2.59}
+\newcommand{\deeponetWorstDeg}{1.49}
+\newcommand{\darcyFnoWorstDeg}{1.03}
+% Convergence (Phase 5)
+\newcommand{\sgdFnoRatio}{3.0}
+% Legacy (for appendix reuse)
+\newcommand{\holdoutWinFraction}{15/33 (45\%)}
+\newcommand{\holdoutMeanImprovement}{1.2\%}
+\newcommand{\withinSliceUnstableFrac}{22/27 (81\%)}
+
+% ══════════════════════════════════════════════════════════════════════
+\title{%
+  Response-Surface Diagnostics for Operator-Learning Scaling%
+}
+\author{Lucas Perrier}
+\date{\today \quad (Working Draft --- v4)}
+
+\begin{document}
+\maketitle
+
+% ══════════════════════════════════════════════════════════════════════
+\begin{abstract}
+Empirical scaling laws have guided resource allocation in large-scale
+machine learning, yet applying them to operator learning is complicated
+by a third axis---discretization resolution---that interacts with
+dataset size and model capacity in ways that 1D power-law fits cannot
+capture. We conduct a systematic study across three 1D PDE benchmarks
+(Burgers, Darcy, diffusion), four architectures (MLP, DeepONet, FNO,
+and a capacity-controlled MLP variant), seven capacity levels, and
+\totalRuns{} experimental configurations, sweeping dataset size $N$,
+training resolution $\Rtrain$, and evaluation resolution $\Reval$
+simultaneously.
+
+Rather than selecting a ``winning'' parametric law per 1D slice, we
+characterize each cell of the $(N, \Rtrain, D)$ grid by its
+\emph{local sensitivity} to each axis and assign it a regime label:
+data-limited, resolution-sensitive, capacity-limited, saturated, or
+unstable. The resulting \emph{response-surface} view reveals that
+48.6\% of cells are simultaneously responsive to multiple axes
+(``mixed'')---structure that any 1D slice analysis collapses away.
+
+We find three headline results. First, \textbf{the marginal value of
+doubling resolution is non-monotone}: on Burgers, the only clearly
+beneficial transition is $R{=}64 \to 128$ (21\% median error
+reduction); going beyond $R{=}256$ provides no benefit, and 23.4\%
+of all resolution-doubling transitions \emph{increase} error.
+Second, \textbf{FNO's resolution invariance is task-dependent,
+not architecture-inherent}: on Burgers, training at $R{=}256$
+and evaluating at $R{=}32$ degrades error by
+$\fnoWorstDeg{\times}$ (median worst case), while on Darcy the
+worst transfer degradation is $\darcyFnoWorstDeg{\times}$.
+Third, \textbf{every training divergence in the Burgers grid traces
+to a data-generator bug at a single resolution ($R{=}48$)}, not to
+optimizer instability---a finding that the response-surface framing
+surfaced and that 1D law fits would have averaged away.
+
+We provide per-cell regime maps, cross-resolution transfer matrices,
+and practical design rules (e.g., ``use Adam for FNO---SGD converges
+but to a $\sgdFnoRatio{\times}$ worse solution'') derived directly
+from the response-surface structure.
+\end{abstract}
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+
+Empirical scaling laws have become a central tool for understanding and
+predicting the performance of large-scale machine learning
+systems~\citep{kaplan2020scaling,hoffmann2022training}. In natural
+language processing and computer vision, power-law relationships between
+test loss and dataset size, parameter count, and compute budget guide
+resource allocation decisions worth millions of dollars.
+
+Scientific machine learning (SciML) faces an analogous resource
+allocation problem with a twist: the practitioner must additionally
+choose the \emph{discretization resolution} at which training data are
+generated. Finer resolution is more expensive to produce but may
+capture physics that coarser grids miss. For operator
+learning---methods that learn maps between function
+spaces~\citep{lu2021learning,li2021fourier}---the resolution axis is
+especially consequential because architectures like the Fourier Neural
+Operator (FNO) are marketed as ``resolution-invariant,'' yet the
+degree to which this invariance holds in practice has not been
+systematically studied.
+
+The standard methodology for studying these trade-offs fits a
+power-law (or, more recently, a parametric law family) to 1D slices
+of error vs.\ one scaling axis at a time. This produces an exponent
+or a ``winning law identity'' per slice, which is then interpreted
+as a characteristic of the task--architecture pair. We argue this
+framing has three limitations:
+
+\begin{enumerate}
+  \item \textbf{It collapses 2D/3D structure into 1D.} The decision
+    of which axis to slice along biases the result; the joint $(N, R, D)$
+    response surface contains information that no single slice retains.
+  \item \textbf{It depends on the candidate law set.} Adding or
+    removing a candidate can flip the ``winner'' without any change
+    in the data.
+  \item \textbf{It is statistically fragile at per-slice sample
+    sizes of 4--7.} In a prior version of this work, a held-out
+    prediction contest showed that multi-law fitting matches but does
+    not meaningfully outperform a power-law-only baseline
+    (\holdoutWinFraction{} wins, ${\sim}$\holdoutMeanImprovement{}
+    mean improvement).
+\end{enumerate}
+
+\paragraph{This paper.}
+We reframe the scaling-law question from ``which parametric law
+wins?'' to ``where on the $(N, R, D)$ response surface is the
+system operating?'' For each cell of the joint grid, we compute
+local sensitivities to each axis, assign a regime label
+(data-limited, resolution-sensitive, capacity-limited, saturated,
+or unstable), and study how models transfer across resolutions via
+transfer matrices. This produces actionable diagnostics---e.g.,
+``your FNO is data-limited at this $(N, R)$ cell; add more training
+data rather than increasing resolution''---that law-identity claims
+do not.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item We introduce \textbf{response-surface diagnostics} for
+    operator learning: per-cell regime labels derived from local
+    log-log sensitivities, with empirically calibrated thresholds.
+    We show that 48.6\% of cells in our grid are ``mixed''
+    (simultaneously responsive to multiple axes), quantifying the
+    information loss inherent in 1D-slice analyses.
+  \item We provide the first systematic \textbf{cross-resolution
+    transfer analysis} for operator learning, showing that FNO's
+    claimed resolution invariance holds on Darcy
+    ($\darcyFnoWorstDeg{\times}$ worst degradation) but fails
+    catastrophically on Burgers ($\fnoWorstDeg{\times}$), with a
+    consistent train-high-eval-low asymmetry.
+  \item We show that \textbf{the marginal value of resolution is
+    non-monotone}: on Burgers, the only clearly beneficial
+    transition is $R{=}64 \to 128$; beyond $R{=}256$, more
+    resolution provides no benefit. Overall, 23.4\% of
+    resolution-doubling transitions \emph{increase} error.
+  \item We identify and trace a \textbf{data-generator bug at
+    $R{=}48$} that accounts for all 582 ``training divergences''
+    previously attributed to optimizer instability, demonstrating
+    that the response-surface framing surfaces failure modes that
+    1D analyses average away.
+  \item We provide \textbf{practical design rules} grounded in the
+    response-surface structure: optimizer choice (Adam vs.\ SGD:
+    $\sgdFnoRatio{\times}$ error difference for FNO), the
+    resolution sweet spot ($R \in [64, 128]$ for Burgers-type
+    problems), and the resolution--capacity confound resolution
+    via a controlled-parameter MLP.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Neural scaling laws.}
+\citet{kaplan2020scaling} and \citet{hoffmann2022training} established
+power-law scaling of cross-entropy loss with dataset tokens, parameter
+count, and compute for autoregressive language models.
+\citet{hestness2017deep} showed similar trends across vision and speech.
+In scientific ML, \citet{perrier2025scaling} introduced scaling-law
+diagnostics for physics-informed approaches (PINNs, HNNs) in
+low-dimensional settings, finding that physics priors shift the error
+floor rather than the scaling exponent. Our work extends this program to
+infinite-dimensional operator learning and elevates resolution to a
+first-class scaling variable.
+
+\paragraph{Operator learning.}
+DeepONet~\citep{lu2021learning} builds on the universal approximation
+theorem for operators~\citep{chen1995universal}, factorizing the learned
+operator into branch and trunk components. The Fourier Neural Operator
+(FNO)~\citep{li2021fourier} parameterizes integral kernels via
+truncated Fourier series, achieving state-of-the-art accuracy on
+several PDE benchmarks. Recent extensions include U-shaped
+architectures~\citep{wen2022ufno}, attention
+mechanisms~\citep{hao2023gnot}, and physics-informed
+variants~\citep{wang2021learning}.
+
+\paragraph{Resolution and discretization in operator learning.}
+A key selling point of neural operators is their ability to generalize
+across resolutions. \citet{li2021fourier} demonstrated FNO's
+zero-shot super-resolution capability. However, systematic studies of
+how \emph{training} resolution affects accuracy---and whether more
+resolution is always better---are lacking. Our transfer-matrix analysis
+fills this gap and provides the first quantitative evidence that FNO's
+resolution invariance is task-dependent.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Experimental Framework}
+\label{sec:framework}
+
+\subsection{Problem Setting}
+\label{sec:problem}
+
+We consider the supervised learning of solution operators
+$\mathcal{G}^\dagger : \mathcal{U} \to \mathcal{V}$, where
+$\mathcal{U}$ and $\mathcal{V}$ are Banach spaces of functions on
+some domain $\Omega \subset \mathbb{R}^d$. Given $N$ input--output
+pairs $\{(u_i, v_i)\}_{i=1}^N$ with
+$v_i = \mathcal{G}^\dagger(u_i)$, a model $\mathcal{G}_\theta$ with
+$D = |\theta|$ parameters is trained on data discretized at spatial
+resolution $R$ (grid points per spatial dimension).
+
+\subsection{PDE Benchmarks}
+
+\begin{table}[h]
+\centering
+\caption{PDE benchmark tasks. All tasks map an input function to an
+output function on the same domain, discretized at resolution $R$.}
+\label{tab:tasks}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Task} & \textbf{PDE} & \textbf{Operator} & \textbf{Character} \\
+\midrule
+Burgers & $u_t + u u_x = \nu u_{xx}$ &
+  $u_0(x) \mapsto u(x, T)$ & Advection-dominated \\
+Darcy & $-\nabla \cdot (a \nabla u) = f$ &
+  $a(x) \mapsto u(x)$ & Elliptic, multiscale \\
+Diffusion & $u_t = \nu u_{xx}$ &
+  $u_0(x) \mapsto u(x, T)$ & Diffusion-dominated \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+Burgers uses a spectral solver with integrating-factor RK4 and
+$\frac{2}{3}$-rule dealiasing ($\Delta t = 10^{-3}$).
+Darcy uses a spectral Galerkin method.
+Diffusion uses an exact spectral solution. All solvers are
+resolution-parameterized.
+
+\subsection{Architectures}
+
+\begin{table}[h]
+\centering
+\caption{Model architectures and their resolution handling.}
+\label{tab:models}
+\begin{tabular}{@{}llp{7cm}@{}}
+\toprule
+\textbf{Model} & \textbf{Type} & \textbf{Resolution handling} \\
+\midrule
+MLP & Discretization-tied &
+  Flattened input of dimension $R$; parameter count $\propto R$ \\
+MLP-ctrl & Discretization-tied &
+  Hidden width adjusted so $D \approx \text{const}$ across $R$;
+  isolates resolution from capacity \\
+DeepONet & Mesh-free &
+  Branch encodes input at training $R$; trunk evaluates at arbitrary
+  query points \\
+FNO & Spectral &
+  Global convolutions in Fourier space; truncation to $k_{\max}$ modes
+  enables resolution transfer \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+MLP-ctrl (\texttt{mlp\_controlled}) exists on Burgers and Diffusion
+only. It uses the same architecture as the standard MLP but adjusts the
+hidden width at each resolution so that the parameter count matches the
+standard MLP at $R{=}64$. This decouples the resolution and capacity
+axes, which are confounded in the standard MLP (where $D \propto R$).
+Regime-label analysis confirms the decoupling works: MLP-ctrl has only
+15 resolution-sensitive cells out of 112 on Burgers, versus 107/602 for
+the standard MLP (\Cref{sec:regimes}).
+
+\subsection{Experimental Grid}
+
+We sweep over five axes: dataset size $N$ (11 values for Burgers/Darcy,
+5 for Diffusion), training resolution $\Rtrain$ (10 values for Burgers,
+4 for Darcy/Diffusion), model capacity (7 named levels from
+\emph{tiny} to \emph{xlarge}), data seed (2), and training seed
+(2--3 per task). The total is \totalRuns{} training and evaluation
+records (\mainRuns{} main grid + \ablationRuns{} optimizer ablation).
+
+\begin{table}[h]
+\centering
+\caption{Experimental run accounting.}
+\label{tab:run-accounting}
+\small
+\begin{tabular}{@{}llrl@{}}
+\toprule
+\textbf{Component} & \textbf{Scope} & \textbf{Runs} &
+\textbf{Purpose} \\
+\midrule
+Main grid (diagonal) & 3 tasks $\times$ 4 models & \nDiagTraining{} &
+  Training runs across $(N, R, C)$ \\
+Cross-resolution eval & DeepONet + FNO & \crossResRows{} &
+  Post-hoc $\Reval \neq \Rtrain$ evaluation \\
+Adam $2\times$ patience & Burgers $\times$ 3 models & 756 &
+  Optimizer ablation \\
+SGD + cosine & Burgers $\times$ 3 models & 657 &
+  Optimizer ablation \\
+\midrule
+\textbf{Grand total} & & \textbf{\totalRuns{}} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Known data-generator artifact.}
+The Burgers spectral solver produces NaN/Inf in 1--4\% of generated
+samples when $R{=}48$, causing all 582 training runs at that resolution
+to fail before completing the first epoch. Every other resolution
+(including $R{=}16, 32, 64, 96, 128, 192, 256, 384, 512$) has zero
+divergences across all models, capacities, and dataset sizes. We
+exclude $R{=}48$ from all primary analyses and report it separately
+(\Cref{app:r48}).
+
+\subsection{Cross-Resolution Evaluation}
+
+After training, each DeepONet and FNO model is evaluated at all
+resolutions $\Reval \in \{32, 64, 128, 256, 512\}$ except its
+training resolution, yielding \crossResRows{} additional evaluation
+records. MLP models are discretization-tied and cannot be evaluated
+at $\Reval \neq \Rtrain$. For DeepONet, branch inputs at non-training
+resolutions are linearly interpolated to $\Rtrain$ before the forward
+pass. FNO natively handles arbitrary input resolutions via Fourier
+truncation/zero-padding.
+
+\subsection{Primary Outcomes and Regime Labels}
+\label{sec:outcomes}
+
+For each diagonal cell $(T, M, C, N, \Rtrain)$, we aggregate over
+seeds and compute: (1)~\emph{median} test relative $L^2$ error
+$\relLtwo$ (robust to outlier seeds); (2)~interquartile range;
+(3)~seed coefficient of variation; (4)~convergence rate (fraction
+of seeds that completed training); (5)~divergence and instability
+rates.
+
+\paragraph{Local sensitivities.}
+At each cell, we compute centered log--log finite differences against
+each axis:
+\begin{equation}
+  S_X(i) = \frac{\ln E(X_{i+1}) - \ln E(X_{i-1})}
+                 {\ln X_{i+1} - \ln X_{i-1}}, \quad
+  X \in \{N, R, D\}.
+\end{equation}
+Boundary cells use one-sided differences. The capacity axis uses
+parameter count $D$ (not the named slot) as the coordinate.
+
+\paragraph{Regime labels.}
+We pool $|S_N|$, $|S_R|$, $|S_D|$ across all non-$R{=}48$ cells
+and set the thresholds at the empirical quartiles:
+$\theta_{\mathrm{low}} = \threshLow$ (25th percentile) and
+$\theta_{\mathrm{high}} = \threshHigh$ (75th percentile). A cell is:
+\begin{itemize}[nosep]
+  \item \textbf{data-limited} if $|S_N| > \theta_{\mathrm{high}}$
+    and $|S_R|, |S_D| < \theta_{\mathrm{high}}$;
+  \item \textbf{resolution-sensitive} if $|S_R| > \theta_{\mathrm{high}}$
+    and $|S_N|, |S_D| < \theta_{\mathrm{high}}$;
+  \item \textbf{capacity-limited} if $|S_D| > \theta_{\mathrm{high}}$
+    and $|S_N|, |S_R| < \theta_{\mathrm{high}}$;
+  \item \textbf{saturated} if all three $|S| < \theta_{\mathrm{low}}$;
+  \item \textbf{unstable} if divergence rate $> 0.10$ or seed CV
+    $> 0.50$ (takes precedence);
+  \item \textbf{mixed} otherwise (multiple axes simultaneously
+    responsive).
+\end{itemize}
+The thresholds are not hand-picked; they fall on quartile boundaries
+of the empirical sensitivity distribution and are fully reproducible
+from the data.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Results: Response-Surface Diagnostics}
+\label{sec:regimes}
+
+\subsection{Regime Distribution}
+
+\Cref{tab:regime-dist} shows the distribution of regime labels across
+all \diagCells{} diagonal cells.
+
+\begin{table}[h]
+\centering
+\caption{Regime label distribution across the $(N, R, D)$ grid.
+``Mixed'' means $\geq$2 axes have sensitivity above $\theta_{\mathrm{high}}$.}
+\label{tab:regime-dist}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Regime} & \textbf{Count} & \textbf{Share} \\
+\midrule
+mixed                & \regMixed{}   & 48.6\% \\
+data-limited         & \regDataLim{} & 11.8\% \\
+resolution-sensitive & \regResSens{} & 11.5\% \\
+capacity-limited     & \regCapLim{}  & 5.5\% \\
+unstable             & \regUnstable{} & 2.4\% \\
+saturated            & \regSaturated{} & 1.5\% \\
+\midrule
+ambiguous (boundary) & \regAmbiguous{} & 14.3\% \\
+data-bug ($R{=}48$)  & \regDataBug{} & 4.4\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+\textbf{The 48.6\% ``mixed'' fraction is the headline finding.}
+Almost half of the cells in the operator-learning grid are
+simultaneously responsive to more than one of $(N, R, D)$.
+Forcing each cell to commit to a single ``winning law'' along a
+single axis---as the standard 1D-slice methodology does---discards
+the joint information in these cells.
+
+\subsection{Per-Architecture Regime Patterns}
+\label{sec:per-arch}
+
+The regime distribution varies by (task, model), providing
+architecture-specific diagnostics (\Cref{tab:regime-by-model}).
+
+\begin{table}[h]
+\centering
+\caption{Per-(task, model) regime counts (excluding
+ambiguous and $R{=}48$). Columns: CL = capacity-limited,
+DL = data-limited, M = mixed, RS = resolution-sensitive,
+S = saturated, U = unstable.}
+\label{tab:regime-by-model}
+\small
+\begin{tabular}{@{}llrrrrrr@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & CL & DL & M & RS & S & U \\
+\midrule
+Burgers & DeepONet      & 36 &  3 & 233 & 117 & 3 & 0 \\
+Burgers & FNO           &  3 & 91 & 206 &  92 & 0 & 0 \\
+Burgers & MLP           & 14 & 35 & 235 & 107 & 1 & 0 \\
+Burgers & MLP-ctrl      &  5 &  1 &  91 &  15 & 0 & 0 \\
+Darcy   & DeepONet      & 34 & 52 & 157 &  15 & 6 & 44 \\
+Darcy   & FNO           &  4 & 28 & 247 &   3 & 26 & 0 \\
+Darcy   & MLP           &  9 & 77 & 173 &   2 & 11 & 36 \\
+Diff.   & DeepONet      & 24 & 24 &  89 &   2 & 1 & 0 \\
+Diff.   & FNO           & 28 & 44 &  61 &   3 & 3 & 1 \\
+Diff.   & MLP           & 17 & 41 &  69 &  13 & 0 & 0 \\
+Diff.   & MLP-ctrl      & 12 &  2 &  80 &  18 & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Key observations:
+\begin{itemize}
+  \item \textbf{FNO on Burgers is the most data-limited model}
+    (91 data-limited cells): FNO needs more data, not higher
+    resolution, at most operating points.
+  \item \textbf{DeepONet on Burgers has the most resolution-sensitive
+    cells} (117): DeepONet is the most brittle to the choice of
+    training resolution.
+  \item \textbf{MLP-ctrl decouples resolution from capacity.}
+    Only 15 of 112 Burgers/MLP-ctrl cells are resolution-sensitive
+    (13.4\%), versus 107/602 (17.8\%) for the standard MLP.
+  \item \textbf{Darcy instability is model-specific.} Darcy/DeepONet
+    (44 unstable) and Darcy/MLP (36 unstable) account for 80 of 81
+    main-grid unstable cells. Darcy/FNO has zero. This is a task--model
+    interaction, not a generic instability.
+  \item \textbf{Darcy/FNO has the most saturated cells} (26): FNO
+    finds Darcy easy and hits a plateau where more data, resolution,
+    or capacity does not help.
+\end{itemize}
+
+
+\subsection{Marginal Value of Resolution}
+\label{sec:marginal-R}
+
+For each cell where both $R$ and $2R$ exist with successful runs,
+we compute the ratio $\relLtwo(2R) / \relLtwo(R)$. Ratio $< 1$
+means doubling resolution helps; ratio $> 1$ means it hurts.
+
+\begin{table}[h]
+\centering
+\caption{Median ratio of error after doubling $R$, by (task, model).
+Values $>1$ indicate doubling $R$ hurts. Bold: most notable entries.}
+\label{tab:marginal-R}
+\begin{tabular}{@{}llrr@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{$n$ pairs} &
+\textbf{Med.\ ratio} \\
+\midrule
+Burgers & FNO        & 427 & \textbf{0.878} \\
+Burgers & DeepONet   & 427 & 0.956 \\
+Burgers & MLP        & 427 & 0.953 \\
+Burgers & MLP-ctrl   &  84 & 0.955 \\
+Darcy   & FNO        & 231 & 0.995 \\
+Darcy   & DeepONet   & 231 & 0.989 \\
+Darcy   & MLP        & 231 & 0.974 \\
+Diff.   & MLP-ctrl   &  84 & \textbf{1.213} \\
+Diff.   & MLP        & 105 & \textbf{1.095} \\
+Diff.   & DeepONet   & 105 & 1.041 \\
+Diff.   & FNO        & 105 & 0.998 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+Across the entire grid, \textbf{23.4\% of resolution-doubling
+transitions increase error by $>$5\%}. For Diffusion/MLP-ctrl,
+the median ratio is 1.21---doubling $R$ makes error 21\% worse.
+For Burgers/FNO, doubling $R$ helps (median 0.878), but
+\Cref{tab:burgers-transitions} shows the benefit is concentrated
+in the $R{=}64 \to 128$ transition; beyond $R{=}256$, the marginal
+value is zero.
+
+\begin{table}[h]
+\centering
+\caption{Median error ratio for each resolution-doubling transition
+on Burgers (all models combined).}
+\label{tab:burgers-transitions}
+\begin{tabular}{@{}ccr@{}}
+\toprule
+$R_{\text{low}}$ & $R_{\text{high}}$ & Median ratio \\
+\midrule
+16  & 32  & 1.855 \\
+32  & 64  & 0.924 \\
+64  & 128 & \textbf{0.788} \\
+96  & 192 & 0.868 \\
+128 & 256 & 0.957 \\
+192 & 384 & 1.001 \\
+256 & 512 & 1.008 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+The $R{=}16 \to 32$ entry (1.855) means the typical cell gets nearly
+twice as bad when going from $R{=}16$ to $R{=}32$. This reflects
+that $R{=}16$ is so coarse that the test problem is artificially
+easy (the ground truth itself is heavily smoothed). Once the grid
+resolves the actual dynamics, the model must work harder.
+
+\paragraph{Practical design rule.}
+For Burgers-type advection-dominated problems, the sweet spot is
+$R \in [64, 128]$. Below $R{=}32$, error metrics are misleading;
+above $R{=}256$, additional resolution is wasted compute.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Results: Cross-Resolution Transfer}
+\label{sec:transfer}
+
+Only DeepONet and FNO support cross-resolution evaluation (MLP models
+are discretization-tied). For each $(T, M, C, N)$ slice, we construct
+a transfer matrix $K[i,j] = \text{median } \relLtwo$ at
+$(\Rtrain = R_i, \Reval = R_j)$ and compute the degradation ratio
+$K[i,j] / K[i,i]$ relative to the diagonal baseline
+(\Cref{tab:transfer-scores}).
+
+\begin{table}[h]
+\centering
+\caption{Per-(task, model) median transfer scores across all slices.
+Higher degradation = more fragile.}
+\label{tab:transfer-scores}
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+\textbf{Task} & \textbf{Model} & \textbf{Mean deg.} &
+\textbf{Worst deg.} & \textbf{Asymmetry} \\
+\midrule
+Burgers & DeepONet & 1.015 & \deeponetWorstDeg{} & 1.44 \\
+Burgers & FNO      & \fnoMeanDeg{} & \textbf{\fnoWorstDeg{}} & 1.65 \\
+Darcy   & DeepONet & 1.039 & 1.13 & 0.98 \\
+Darcy   & FNO      & 1.002 & \textbf{\darcyFnoWorstDeg{}} & 1.00 \\
+Diff.   & DeepONet & 1.072 & 1.22 & 0.98 \\
+Diff.   & FNO      & 1.074 & 1.32 & 1.02 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{FNO is Catastrophically Fragile on Burgers}
+
+All 10 worst transfer slices in the dataset are Burgers/FNO, training
+at $R \in \{128, 256\}$ and evaluating at $R{=}32$, with 8--9$\times$
+degradation. The architecture marketed as ``resolution-invariant''
+shows the worst resolution fragility in our study. The degradation
+scales super-linearly with the $\Rtrain / \Reval$ ratio.
+
+\subsection{Transfer is Task-Dependent, Not Architecture-Inherent}
+
+The same FNO that degrades by $\fnoWorstDeg{\times}$ on Burgers
+degrades by only $\darcyFnoWorstDeg{\times}$ on Darcy. The transfer
+property is not an architectural feature---it depends on the physics.
+On the easier, smoother task (Darcy), FNO transfers nearly perfectly;
+on the harder, advection-dominated task (Burgers), high-resolution
+features have no spectral support at low resolution.
+
+\subsection{Transfer Asymmetry}
+
+On Burgers, the train-high-eval-low direction is consistently worse
+than the reverse. FNO asymmetry is 1.65 (65\% worse in the
+high-to-low direction); DeepONet is 1.44. On Darcy and Diffusion,
+transfer is nearly symmetric ($\sim$1.0). The asymmetry is consistent
+with a spectral-aliasing mechanism: features learned at high resolution
+have no spectral support at low resolution, while features learned at
+low resolution are merely undersampled.
+
+\paragraph{Practical design rule.}
+If deploying a Burgers-type FNO trained at $R \geq 128$, do not
+evaluate at $R{=}32$---expect 8$\times$ error blow-up. Retrain at
+the target resolution, or accept $\sim$1.5$\times$ degradation by
+evaluating at $R{=}64$ instead.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Results: Convergence and Instability}
+\label{sec:convergence}
+
+\subsection{Main-Grid Convergence}
+
+\textbf{Zero training runs experienced optimization divergence on
+clean data.} Across all \nDiagTraining{} diagonal training runs
+(excluding $R{=}48$), every model, capacity, and dataset-size
+combination converged at 100\%. The 582 runs previously reported as
+``diverged'' all occurred at $R{=}48$ due to a data-generator bug:
+the Burgers spectral solver produces NaN in 1--4\% of samples at
+that resolution only. See \Cref{app:r48} for the standalone
+reproduction.
+
+\subsection{Seed Variability}
+
+The \regUnstable{} cells flagged as ``unstable'' (seed CV $> 0.50$)
+are almost entirely Darcy: 44 Darcy/DeepONet and 36 Darcy/MLP cells.
+Darcy/FNO has zero unstable cells. This is a task--model interaction:
+Darcy's log-normal permeability fields produce challenging training
+instances that DeepONet and MLP struggle with when the random seed is
+unfavorable, but that FNO handles robustly.
+
+\subsection{Optimizer Ablation}
+
+We retrained all Burgers/medium-capacity cells with two alternative
+optimizer configurations: SGD with cosine annealing (657 runs) and
+Adam with doubled early-stopping patience (756 runs). All three
+configurations---the baseline Adam, SGD-cosine, and
+Adam-$2\times$---achieve 100\% convergence.
+
+However, error magnitude differs substantially:
+\begin{itemize}[nosep]
+  \item SGD-cosine produces $\sgdFnoRatio{\times}$ worse error for
+    FNO, 1.4$\times$ worse for DeepONet and MLP.
+  \item Adam-$2\times$ matches the baseline within 4\%.
+\end{itemize}
+FNO's spectral convolution layers require per-parameter learning-rate
+adaptation to find a good solution; the fixed learning-rate schedule
+of SGD fails to explore the loss landscape effectively.
+
+\paragraph{Practical design rule.}
+If using FNO, use Adam (or similar adaptive optimizer). SGD converges
+but to a $\sgdFnoRatio{\times}$ worse solution.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{The Case for Response Surfaces}
+
+The traditional 1D-slice approach to scaling analysis produced, in an
+earlier version of this work, AICc-selected ``winning'' laws for 27
+task--model--axis combinations. A held-out prediction contest showed
+that the multi-law framework outperformed a power-law-only baseline
+in only \holdoutWinFraction{} cases, with ${\sim}$\holdoutMeanImprovement{}
+mean improvement. Within-slice bootstrap analysis found
+\withinSliceUnstableFrac{} of slices had fragile law identity.
+
+The response-surface framing replaces this with a richer, more stable
+description:
+\begin{itemize}
+  \item 48.6\% of cells are ``mixed'' (simultaneously responsive to
+    $\geq$2 axes)---information no 1D slice retains.
+  \item Transfer matrices reveal 8--9$\times$ degradation that is
+    invisible in diagonal-only law fits.
+  \item The $R{=}48$ data bug was surfaced by the per-cell heatmap;
+    it would have been averaged into a ``3.3\% divergence rate''
+    under a 1D analysis.
+\end{itemize}
+
+\subsection{When Does Resolution Matter?}
+
+Resolution matters most for advection-dominated problems (Burgers)
+where it allows the model to resolve sharp gradients. It matters least
+for smooth problems (Diffusion), where higher resolution introduces
+irrelevant high-frequency content that MLPs waste capacity fitting.
+For elliptic problems (Darcy), the effect is intermediate and
+model-dependent.
+
+The controlled-parameter MLP experiment confirms that ``resolution
+hurts'' on Diffusion is a genuine resolution effect, not a
+parameter-count confound: degradation persists even at fixed $D$.
+
+\subsection{Architecture Recommendations}
+
+\begin{enumerate}
+  \item \textbf{FNO:} Most accurate overall (best cells are all
+    FNO on Diffusion at $\relLtwo \approx 0.002$). But needs the most
+    data (91 data-limited Burgers cells) and is the most fragile to
+    cross-resolution transfer (8--9$\times$ on Burgers). Use Adam;
+    SGD yields $\sgdFnoRatio{\times}$ worse solutions.
+  \item \textbf{DeepONet:} More robust to transfer ($\deeponetWorstDeg{\times}$
+    worst degradation on Burgers) but the most sensitive to training
+    resolution (117 resolution-sensitive Burgers cells).
+  \item \textbf{MLP:} Cannot evaluate at $\Reval \neq \Rtrain$
+    (discretization-tied). Competitive on Darcy but worst on Burgers.
+  \item \textbf{MLP-ctrl:} Successfully decouples resolution from
+    capacity. Most cells are ``mixed'' rather than
+    resolution-sensitive, confirming the decoupling.
+\end{enumerate}
+
+\subsection{Limitations}
+
+\begin{enumerate}
+  \item All tasks are 1D. In higher dimensions, resolution effects are
+    amplified ($R^d$ cost growth) and may shift the balance.
+  \item Darcy's resolution range ($R \in \{32, 64, 128, 256\}$) is
+    half of Burgers's. Cross-resolution conclusions about Darcy are
+    limited to this range.
+  \item Diffusion uses only 5 $N$ values per model (vs.\ 11 for
+    Burgers). Local-slope claims on the data axis for Diffusion are
+    correspondingly weaker.
+  \item We use 2 data seeds globally (3 for MLP-ctrl). Seed-variability
+    estimates have limited statistical power.
+  \item The regime-label thresholds are derived from the empirical
+    quartiles of the sensitivity distribution. They are not universal
+    constants; a different grid would yield different thresholds.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+\label{sec:conclusion}
+
+We have presented a response-surface diagnostic framework for
+operator-learning scaling that replaces 1D parametric law fits with
+per-cell regime labels, cross-resolution transfer matrices, and
+marginal value-of-resolution analysis. The framework reveals
+structure---48.6\% mixed-regime cells, task-dependent FNO fragility,
+and a data-generator bug masquerading as optimizer instability---that
+the standard 1D-slice methodology cannot surface.
+
+Our findings distill into three practical design rules for
+practitioners:
+\begin{enumerate}
+  \item \textbf{The resolution sweet spot is narrow.} For
+    advection-dominated problems, $R \in [64, 128]$ is the only
+    range with reliable benefit; below $R{=}32$, error metrics are
+    misleading; above $R{=}256$, additional resolution is wasted
+    compute.
+  \item \textbf{Do not trust cross-resolution transfer on hard
+    problems.} FNO trained at $R{=}256$ and evaluated at $R{=}32$
+    loses 8--9$\times$ accuracy on Burgers, even though the same
+    FNO transfers nearly losslessly on Darcy.
+  \item \textbf{Optimizer choice matters for FNO.} SGD converges
+    but to a $\sgdFnoRatio{\times}$ worse solution than Adam.
+\end{enumerate}
+
+The response-surface framework is general: it can be applied to any
+experimental grid with $\geq$2 scaling axes, and the regime labels
+are derived from the data without assuming any parametric form. We
+release the full dataset (\totalRuns{} runs) and analysis pipeline
+to support future work.
+
+\section*{Acknowledgments}
+Experiments were conducted on three RunPod GPU instances (NVIDIA A4000,
+L4, and RTX 3090). Total experiment wall time was approximately 8 hours
+across all pods.
+
+
+% ══════════════════════════════════════════════════════════════════════
+\begin{thebibliography}{20}
+
+\bibitem[Chen and Chen(1995)]{chen1995universal}
+T.~Chen and H.~Chen.
+\newblock Universal approximation to nonlinear operators by neural networks
+  with arbitrary activation functions and its application to dynamical systems.
+\newblock \emph{IEEE Trans. on Neural Networks}, 6(4):911--917, 1995.
+
+\bibitem[Hao et~al.(2023)]{hao2023gnot}
+Z.~Hao, Z.~Wang, H.~Su, C.~Ying, Y.~Dong, S.~Liu, Z.~Cheng, J.~Song, and
+  J.~Zhu.
+\newblock {GNOT}: A general neural operator transformer for operator learning.
+\newblock In \emph{ICML}, 2023.
+
+\bibitem[Hestness et~al.(2017)]{hestness2017deep}
+J.~Hestness, S.~Narang, N.~Ardalani, G.~Diamos, H.~Jun, H.~Kianinejad,
+  M.~M.~A. Patwary, Y.~Yang, and Y.~Zhou.
+\newblock Deep learning scaling is predictable, empirically.
+\newblock \emph{arXiv:1712.00409}, 2017.
+
+\bibitem[Hoffmann et~al.(2022)]{hoffmann2022training}
+J.~Hoffmann, S.~Borgeaud, A.~Mensch, E.~Buchatskaya, T.~Cai, E.~Rutherford,
+  D.~de~Las~Casas, L.~A. Hendricks, J.~Welbl, A.~Clark, T.~Hennigan,
+  E.~Noland, K.~Millican, G.~van~den~Driessche, B.~Damoc, A.~Guy,
+  S.~Osindero, K.~Simonyan, E.~Elsen, J.~W. Rae, O.~Vinyals, and
+  L.~Sifre.
+\newblock Training compute-optimal large language models.
+\newblock In \emph{NeurIPS}, 2022.
+
+\bibitem[Kaplan et~al.(2020)]{kaplan2020scaling}
+J.~Kaplan, S.~McCandlish, T.~Henighan, T.~P. Brown, B.~Chess, R.~Child,
+  S.~Gray, A.~Radford, J.~Wu, and D.~Amodei.
+\newblock Scaling laws for neural language models.
+\newblock \emph{arXiv:2001.08361}, 2020.
+
+\bibitem[Li et~al.(2021)]{li2021fourier}
+Z.~Li, N.~Kovachki, K.~Azizzadenesheli, B.~Liu, K.~Bhatt, A.~Stuart, and
+  A.~Anandkumar.
+\newblock Fourier neural operator for parametric partial differential equations.
+\newblock In \emph{ICLR}, 2021.
+
+\bibitem[Lu et~al.(2021)]{lu2021learning}
+L.~Lu, P.~Jin, G.~Pang, Z.~Zhang, and G.~E. Karniadakis.
+\newblock Learning nonlinear operators via {DeepONet} based on the universal
+  approximation theorem of operators.
+\newblock \emph{Nature Machine Intelligence}, 3(3):218--229, 2021.
+
+\bibitem[Perrier(2025)]{perrier2025scaling}
+L.~Perrier.
+\newblock Scaling-law diagnostics for physics-informed machine learning.
+\newblock Working paper, 2025.
+
+\bibitem[Wang et~al.(2021)]{wang2021learning}
+S.~Wang, H.~Wang, and P.~Perdikaris.
+\newblock Learning the solution operator of parametric partial differential
+  equations with physics-informed {DeepONets}.
+\newblock \emph{Science Advances}, 7(40), 2021.
+
+\bibitem[Wen et~al.(2022)]{wen2022ufno}
+G.~Wen, Z.~Li, K.~Azizzadenesheli, A.~Anandkumar, and S.~M. Benson.
+\newblock {U-FNO}---an enhanced {Fourier} neural operator-based deep-learning
+  model for multiphase flow.
+\newblock \emph{Advances in Water Resources}, 163:104180, 2022.
+
+\end{thebibliography}
+
+
+% ══════════════════════════════════════════════════════════════════════
+\appendix
+
+\section{Experimental Details}
+\label{app:details}
+
+\subsection{Capacity Grid}
+
+\begin{table}[h]
+\centering
+\caption{MLP and DeepONet capacity grid (hidden layers $\times$ hidden
+width). FNO uses a separate grid over modes, width, and number of
+layers.}
+\label{tab:capacity-grid}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Level} & \textbf{MLP layers} & \textbf{Hidden width} &
+\textbf{$\sim D$ (MLP, $R\!=\!128$)} \\
+\midrule
+tiny      & 2 & 32  & $\sim$5K \\
+small     & 2 & 64  & $\sim$13K \\
+small-med & 2 & 96  & $\sim$22K \\
+medium    & 2 & 128 & $\sim$34K \\
+med-large & 2 & 192 & $\sim$62K \\
+large     & 2 & 256 & $\sim$82K \\
+xlarge    & 3 & 256 & $\sim$148K \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Training Configuration}
+All models are trained with Adam (learning rate $10^{-3}$, weight decay
+$10^{-5}$), batch size 64, and maximum 5{,}000 epochs with early
+stopping (patience 200, monitoring validation relative $L^2$). Data is
+split 80/10/10 into train/validation/test. Relative $L^2$ loss
+$\|\hat{v} - v\|_2 / \|v\|_2$ is used for training.
+
+\subsection{PDE Solver Details}
+
+\paragraph{Burgers equation.}
+$u_t + u u_x = \nu u_{xx}$ on $[0, 2\pi)$ with periodic boundary
+conditions, $\nu = 0.01$, $T = 1.0$. Solved with integrating-factor
+RK4 in Fourier space with $\frac{2}{3}$-rule dealiasing and
+$\Delta t = 10^{-3}$. Random initial conditions are superpositions of
+Fourier modes with random phases and amplitudes drawn from a $k^{-2}$
+energy spectrum.
+
+\paragraph{Darcy flow.}
+$-\nabla \cdot (a(x) \nabla u(x)) = f(x)$ on $[0, 1]$ with Dirichlet
+boundary conditions, $f(x) = 1$. The coefficient field $a(x)$ is drawn
+from a log-normal random field. Solved via spectral Galerkin method.
+
+\paragraph{Diffusion equation.}
+$u_t = \nu u_{xx}$ on $[0, 2\pi)$ with periodic boundary conditions,
+$\nu = 0.01$, $T = 1.0$. Exact spectral solution: each Fourier mode
+$\hat{u}_k(t) = \hat{u}_k(0) e^{-\nu k^2 t}$. Same initial condition
+distribution as Burgers.
+
+
+\section{The $R{=}48$ Data-Generator Bug}
+\label{app:r48}
+
+The Burgers spectral solver (\texttt{\_spectral\_solve} in
+\texttt{src/scaling\_operator\_learning/tasks/burgers.py}) produces
+NaN/Inf in approximately 1--4\% of generated samples when $R{=}48$,
+the only non-power-of-two resolution in the Burgers grid. All 582
+training runs at $R{=}48$ fail before completing the first epoch
+(\texttt{best\_epoch=-1}, \texttt{failure\_reason=nan\_or\_inf}).
+Every other resolution has zero failures.
+
+\begin{table}[h]
+\centering
+\caption{Standalone reproduction of the $R{=}48$ data-generator bug
+(200 samples per (R, seed), no model training).}
+\label{tab:r48-repro}
+\begin{tabular}{@{}rrrl@{}}
+\toprule
+$R$ & NaN (seed=11) & NaN (seed=22) & $\max|u_T|$ \\
+\midrule
+16  & 0/200 & 0/200 & 4.27 \\
+32  & 0/200 & 0/200 & 4.26 \\
+\textbf{48} & \textbf{7/200} & \textbf{2/200} & \textbf{18.6} \\
+64  & 0/200 & 0/200 & 3.14 \\
+96  & 0/200 & 0/200 & 3.24 \\
+128 & 0/200 & 0/200 & 3.10 \\
+192 & 0/200 & 0/200 & 3.10 \\
+256 & 0/200 & 0/200 & 2.94 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+The 582 ``training divergences'' reported in earlier drafts are
+reattributed from optimization instability to data-generator failure.
+The reproducer script is at \texttt{scripts/repro\_r48\_data\_bug.py}.
+
+
+\section{Law Fits as Supplementary Analysis}
+\label{app:law-fits}
+
+As a supplementary analysis, we fit six candidate functional forms
+(power, exponential, logarithmic, stretched exponential, saturation,
+linear) to 1D slices of error vs.\ each scaling axis, using AICc for
+model selection. Full results are in the project repository at
+\texttt{results/multilaw\_fits.json}.
+
+\paragraph{Why this is not the primary analysis.}
+A held-out prediction contest---the most honest test of whether
+multi-law fitting adds value---found that it outperforms a
+power-law-only baseline in only \holdoutWinFraction{} of cases, with
+${\sim}$\holdoutMeanImprovement{} mean improvement. Within-slice
+bootstrap analysis found \withinSliceUnstableFrac{} of law-identity
+assignments were ``exploratory'' (bootstrap-unstable). These results
+are the strongest internal evidence that law identity is not the right
+level of abstraction for this dataset, and the primary motivation for
+the response-surface framing adopted in this paper.
+
+\paragraph{What the law fits do show.}
+The directional findings from the law fits are consistent with the
+response-surface analysis:
+\begin{itemize}
+  \item Data scaling consistently selects bounded-decay families
+    (exponential, saturation, power with floor) over unbounded
+    forms (logarithmic), once the grid is densified to 11 $N$ values.
+  \item Resolution-axis law identity (logarithmic vs.\ linear) is
+    robust to the candidate set and to the optimizer (\Cref{app:details}).
+  \item Capacity-axis sensitivity is low across the board, consistent
+    with the low $|S_D|$ values in \Cref{sec:outcomes}.
+\end{itemize}
+
+
+\end{document}
